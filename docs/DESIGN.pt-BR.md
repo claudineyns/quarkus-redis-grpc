@@ -165,7 +165,7 @@ compilar, rodar e operar **isoladamente**.
   `v1` sem quebra. Estrutura de arquivos:
   ```
   src/main/proto/
-    string/v1/string.proto   # StringService  (GET, SET, MSET, MGET, INCR, INCRBY até agora)
+    string/v1/string.proto   # StringService  (GET, SET, MSET, MGET, INCR, INCRBY, DECR, DECRBY até agora)
     hash/v1/hash.proto       # HashService
     set/v1/set.proto         # SetService
     key/v1/key.proto         # KeyService
@@ -366,6 +366,10 @@ Regras quando implementado:
   métodos implementados com comentários explicativos sempre que pertinente —
   priorizar o *porquê* (semântica do Redis, decisões de gRPC/protobuf, escolhas de
   mapeamento) em vez do *o quê* óbvio.
+- **Prefira guard clauses a `if/else`.** Sempre que possível, evite `if/else`;
+  use early return ("if-return-or-proceed": trate o caso simples/de borda com
+  `if (cond) return ...;` e siga adiante no nível principal) para reduzir
+  aninhamento. Ex.: `toSetResponse`.
 - **Constantes para strings.** Sempre que possível, associar literais de string
   estáticos/repetidos a constantes nomeadas (evita duplicação e previne o Sonar
   `java:S1192`) — inclusive em rótulos de `switch`, que aceitam constantes de

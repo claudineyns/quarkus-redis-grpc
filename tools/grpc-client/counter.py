@@ -44,6 +44,14 @@ def main():
     print(f"--> INCRBY {KEY} -4\n<-- value={r.value}")
     check(r.value == 7, "INCRBY -4 -> 7")
 
+    r = stub.Decr(string_pb2.DecrRequest(key=KEY))
+    print(f"--> DECR {KEY}\n<-- value={r.value}")
+    check(r.value == 6, "DECR -> 6")
+
+    r = stub.DecrBy(string_pb2.DecrByRequest(key=KEY, decrement=2))
+    print(f"--> DECRBY {KEY} 2\n<-- value={r.value}")
+    check(r.value == 4, "DECRBY 2 -> 4")
+
     # Erro: valor não-inteiro -> FAILED_PRECONDITION.
     stub.Set(string_pb2.SetRequest(key=TEXT, value=b"abc"))
     print(f"--> INCR {TEXT} (valor 'abc')")
@@ -61,7 +69,7 @@ def main():
     if failures:
         print(f"{failures} verificação(ões) falharam")
         sys.exit(1)
-    print("INCR/INCRBY smoke OK")
+    print("contadores (INCR/INCRBY/DECR/DECRBY) smoke OK")
 
 
 if __name__ == "__main__":

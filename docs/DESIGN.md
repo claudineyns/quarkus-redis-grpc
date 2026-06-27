@@ -164,7 +164,7 @@ compile, run, and operate **in isolation**.
   without breaking. File structure:
   ```
   src/main/proto/
-    string/v1/string.proto   # StringService  (GET, SET, MSET, MGET, INCR, INCRBY so far)
+    string/v1/string.proto   # StringService  (GET, SET, MSET, MGET, INCR, INCRBY, DECR, DECRBY so far)
     hash/v1/hash.proto       # HashService
     set/v1/set.proto         # SetService
     key/v1/key.proto         # KeyService
@@ -364,6 +364,10 @@ Rules when implemented:
 - **Didactic comments.** This is also a learning project: enrich implemented
   methods with explanatory comments wherever pertinent — favor the *why* (Redis
   semantics, gRPC/protobuf decisions, mapping choices) over the obvious *what*.
+- **Prefer guard clauses over `if/else`.** Whenever practical, avoid `if/else`;
+  use early returns ("if-return-or-proceed": handle the simple/edge case with
+  `if (cond) return ...;`, then proceed at the top level) to reduce nesting.
+  E.g. `toSetResponse`.
 - **String constants.** Whenever practical, associate static/repeated string
   literals with named constants (avoids duplication and pre-empts Sonar
   `java:S1192`) — including `switch` case labels, which accept compile-time

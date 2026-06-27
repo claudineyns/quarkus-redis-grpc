@@ -6,6 +6,8 @@ import org.jboss.logging.MDC;
 import com.google.protobuf.ByteString;
 
 import io.github.claudineyns.redis.grpc.v1.CounterValue;
+import io.github.claudineyns.redis.grpc.v1.DecrByRequest;
+import io.github.claudineyns.redis.grpc.v1.DecrRequest;
 import io.github.claudineyns.redis.grpc.v1.GetRequest;
 import io.github.claudineyns.redis.grpc.v1.GetResponse;
 import io.github.claudineyns.redis.grpc.v1.IncrByRequest;
@@ -45,6 +47,8 @@ public class StringGrpcService implements StringService {
     private static final String CMD_MGET = "MGET";
     private static final String CMD_INCR = "INCR";
     private static final String CMD_INCRBY = "INCRBY";
+    private static final String CMD_DECR = "DECR";
+    private static final String CMD_DECRBY = "DECRBY";
 
     // Tokens de opção do comando SET (constantes — premissa S1192).
     private static final String OPT_EX = "EX";
@@ -162,19 +166,20 @@ public class StringGrpcService implements StringService {
             final boolean getRequested, final SetCondition condition) {
         final SetResponse.Builder builder = SetResponse.newBuilder();
 
-        if (getRequested) {
-            if (response != null) { // null = nil (chave não existia antes)
-                builder.setPrevious(ByteString.copyFrom(response.toBytes()));
-            }
-            builder.setApplied(switch (condition) {
-                case SET_CONDITION_NX -> response == null; // gravou só se NÃO existia
-                case SET_CONDITION_XX -> response != null; // gravou só se existia
-                default -> true;                           // SET incondicional sempre grava
-            });
-        } else {
+        if (!getRequested) {
             // Sem GET, nil só acontece quando NX/XX impede a gravação.
-            builder.setApplied(response != null);
+            return builder.setApplied(response != null).build();
         }
+
+        if (response != null) { // null = nil (chave não existia antes)
+            builder.setPrevious(ByteString.copyFrom(response.toBytes()));
+        }
+        builder.setApplied(switch (condition) {
+            case SET_CONDITION_NX -> response == null; // gravou só se NÃO existia
+            case SET_CONDITION_XX -> response != null; // gravou só se existia
+            default -> true;                           // SET incondicional sempre grava
+        });
+
         return builder.build();
     }
 
@@ -256,8 +261,29 @@ public class StringGrpcService implements StringService {
         return sendCounter(command, CMD_INCRBY);
     }
 
+    @Override
+    public Uni<CounterValue> decr(final DecrRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_DECR);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("DECR recebido");
+
+        final Request command = Request.cmd(Command.DECR).arg(request.getKey());
+        return sendCounter(command, CMD_DECR);
+    }
+
+    @Override
+    public Uni<CounterValue> decrBy(final DecrByRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_DECRBY);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debugf("DECRBY recebido (decrement=%d)", request.getDecrement());
+
+        final Request command = Request.cmd(Command.DECRBY)
+                .arg(request.getKey()).arg(request.getDecrement());
+        return sendCounter(command, CMD_DECRBY);
+    }
+
     /**
-     * Executa um comando de contador (INCR/INCRBY) e traduz a resposta inteira em
+     * Executa um comando de contador (INCR/INCRBY/DECR/DECRBY) e traduz a resposta inteira em
      * CounterValue. Em sucesso o Redis sempre devolve um inteiro (nunca nil);
      * valor não-inteiro/estouro chegam como falha e viram status gRPC.
      */

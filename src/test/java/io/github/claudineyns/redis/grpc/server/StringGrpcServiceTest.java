@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 import com.google.protobuf.ByteString;
 
 import io.github.claudineyns.redis.grpc.v1.CounterValue;
+import io.github.claudineyns.redis.grpc.v1.DecrByRequest;
+import io.github.claudineyns.redis.grpc.v1.DecrRequest;
 import io.github.claudineyns.redis.grpc.v1.GetRequest;
 import io.github.claudineyns.redis.grpc.v1.GetResponse;
 import io.github.claudineyns.redis.grpc.v1.IncrByRequest;
@@ -298,6 +300,48 @@ class StringGrpcServiceTest {
         seed("test:c:text", "abc");
         final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
                 client.incr(IncrRequest.newBuilder().setKey("test:c:text").build())
+                        .await().indefinitely());
+        assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
+    }
+
+    // ---------- DECR / DECRBY ----------
+
+    @Test
+    void decrOnAbsentReturnsMinusOne() {
+        final CounterValue response = client.decr(
+                DecrRequest.newBuilder().setKey("test:d:new").build()).await().indefinitely();
+        assertEquals(-1L, response.getValue());
+    }
+
+    @Test
+    void decrDecrementsExisting() {
+        seed("test:d:five", "5");
+        final CounterValue response = client.decr(
+                DecrRequest.newBuilder().setKey("test:d:five").build()).await().indefinitely();
+        assertEquals(4L, response.getValue());
+    }
+
+    @Test
+    void decrByPositive() {
+        seed("test:d:by", "10");
+        final CounterValue response = client.decrBy(DecrByRequest.newBuilder()
+                .setKey("test:d:by").setDecrement(4).build()).await().indefinitely();
+        assertEquals(6L, response.getValue());
+    }
+
+    @Test
+    void decrByNegative() {
+        seed("test:d:byn", "10");
+        final CounterValue response = client.decrBy(DecrByRequest.newBuilder()
+                .setKey("test:d:byn").setDecrement(-5).build()).await().indefinitely();
+        assertEquals(15L, response.getValue());
+    }
+
+    @Test
+    void decrOnNonIntegerFails() {
+        seed("test:d:text", "abc");
+        final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
+                client.decr(DecrRequest.newBuilder().setKey("test:d:text").build())
                         .await().indefinitely());
         assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
     }
