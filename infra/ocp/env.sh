@@ -26,6 +26,8 @@ export CERT_DIR="${CERT_DIR:-temp/tls}"
 
 # Secret com a chave mestra (HMAC) do interceptor de credenciais (DESIGN 6.1).
 export AUTH_SECRET="${AUTH_SECRET:-redis-grpc-auth}"
+# ConfigMap com a allowlist de hashes SHA-256(ACCESS_KEY) (hashes não são segredo).
+export ACL_CONFIGMAP="${ACL_CONFIGMAP:-redis-grpc-acl}"
 
 # CA local (em formato Windows, p/ o python nativo) usado pelo cliente gRPC sobre
 # TLS. Definido só se o cert já existir (gerado por 25-tls-secret.sh). Os clientes

@@ -52,6 +52,13 @@ spec:
                 secretKeyRef:
                   name: ${AUTH_SECRET}
                   key: master-key
+            # Allowlist de hashes SHA-256(ACCESS_KEY) do ConfigMap (DESIGN 6.1):
+            # env PROXY_AUTH_ACCESS_KEY_HASHES → propriedade proxy.auth.access-key-hashes.
+            - name: PROXY_AUTH_ACCESS_KEY_HASHES
+              valueFrom:
+                configMapKeyRef:
+                  name: ${ACL_CONFIGMAP}
+                  key: access-key-hashes
           ports:
             - name: https
               containerPort: 8443

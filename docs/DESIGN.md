@@ -304,17 +304,18 @@ Refines the caller authentication into a credential pair that the proxy validate
 **locally**, without storing any per-user secret.
 
 - **Master key (HMAC key):** 64 hex chars (32 bytes, `SecureRandom`), known only
-  to the app owners; provided via env var + OCP/CRC Secret. Used **solely** as the
-  HMAC-SHA256 key to derive/validate SECRET_KEYs — there is no encryption/
-  decryption.
+  to the app owners; from an OCP/CRC **Secret** via env `PROXY_AUTH_MASTER_KEY`
+  → property `proxy.auth.master-key`. Used **solely** as the HMAC key (no
+  encryption/decryption). For HMAC it is the **32 raw bytes (hex-decoded)**.
 - **ACCESS_KEY:** 32 hex chars (16 bytes, high-entropy/`SecureRandom`), generated
   by the owners. Public identifier of the credential.
-- **SECRET_KEY** = `hex( HMAC-SHA256(masterKey, ACCESS_KEY) )` (32 bytes → 64
-  hex). The HMAC input is the **ACCESS_KEY string**. One-way: verifiable, not
-  reversible (recovering the access key from the secret is not a goal).
-- **Allowlist:** a static set of `SHA-256(ACCESS_KEY)` hashes, via env var +
-  OCP/CRC Secret. Plain SHA-256 (no salt) is acceptable here because the
-  ACCESS_KEY is high-entropy (128-bit random), not a password. Enables
+- **SECRET_KEY** = `hex( HMAC-SHA256(key = master-key raw bytes, msg = ACCESS_KEY
+  string) )` (32 bytes → 64 hex). One-way: verifiable, not reversible.
+- **Allowlist:** a set of `SHA-256(ACCESS_KEY string)` hashes (hex), from an
+  OCP/CRC **ConfigMap** (hashes are one-way, not secret) via env
+  `PROXY_AUTH_ACCESS_KEY_HASHES` (comma-separated) → property
+  `proxy.auth.access-key-hashes`. Plain SHA-256 (no salt) is acceptable because
+  the ACCESS_KEY is high-entropy (128-bit random), not a password. Enables
   **per-credential revocation** (remove a hash) without rotating the master key.
 - **Validation rule** (in the auth interceptor, over the credential carried in
   gRPC metadata; this interceptor also gates Server Reflection):

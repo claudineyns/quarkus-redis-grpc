@@ -305,16 +305,19 @@ Refina a autenticação do chamador em um par de credenciais que o proxy valida
 **localmente**, sem armazenar nenhum segredo por usuário.
 
 - **Chave mestra (chave do HMAC):** hex de 64 (32 bytes, `SecureRandom`),
-  conhecida só pelos responsáveis; via variável de ambiente + Secret OCP/CRC.
-  Usada **exclusivamente** como chave do HMAC-SHA256 para derivar/validar
-  SECRET_KEYs — não há cifra/decifra.
+  conhecida só pelos responsáveis; de um **Secret** OCP/CRC via env
+  `PROXY_AUTH_MASTER_KEY` → propriedade `proxy.auth.master-key`. Usada
+  **exclusivamente** como chave do HMAC (sem cifra/decifra). No HMAC, são os
+  **32 bytes crus (hex-decoded)**.
 - **ACCESS_KEY:** hex de 32 (16 bytes, alta entropia/`SecureRandom`), gerado pelos
   responsáveis. Identificador público da credencial.
-- **SECRET_KEY** = `hex( HMAC-SHA256(chave_mestra, ACCESS_KEY) )` (32 bytes → 64
-  hex). A entrada do HMAC é a **string ACCESS_KEY**. Mão única: verificável, não
-  reversível (recuperar o access key a partir do secret não é objetivo).
-- **Allowlist:** conjunto estático de hashes `SHA-256(ACCESS_KEY)`, via variável
-  de ambiente + Secret OCP/CRC. SHA-256 sem salt é aceitável aqui porque o
+- **SECRET_KEY** = `hex( HMAC-SHA256(key = bytes crus da chave mestra, msg =
+  string ACCESS_KEY) )` (32 bytes → 64 hex). Mão única: verificável, não
+  reversível.
+- **Allowlist:** conjunto de hashes `SHA-256(string ACCESS_KEY)` (hex), de um
+  **ConfigMap** OCP/CRC (hashes são mão única, não são segredo) via env
+  `PROXY_AUTH_ACCESS_KEY_HASHES` (separados por vírgula) → propriedade
+  `proxy.auth.access-key-hashes`. SHA-256 sem salt é aceitável porque o
   ACCESS_KEY é de alta entropia (128 bits aleatórios), não uma senha. Permite
   **revogação por credencial** (remover um hash) sem rotacionar a chave mestra.
 - **Regra de validação** (no interceptor de auth, sobre a credencial trafegada na
