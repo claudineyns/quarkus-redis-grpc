@@ -17,3 +17,17 @@ export REDIS_IMAGE="${REDIS_IMAGE:-docker.io/redis:8}"
 
 # Registry interno do OpenShift (resolve a imagem construída pelo S2I).
 export INTERNAL_REGISTRY="${INTERNAL_REGISTRY:-image-registry.openshift-image-registry.svc:5000}"
+
+# TLS de borda (passthrough): host da Route (= CN/SAN do cert), nome do Secret e
+# diretório local (gitignored) onde o openssl gera CA + folha.
+export EDGE_HOST="${EDGE_HOST:-redis-grpc.apps-crc.testing}"
+export TLS_SECRET="${TLS_SECRET:-redis-grpc-tls}"
+export CERT_DIR="${CERT_DIR:-temp/tls}"
+
+# CA local (em formato Windows, p/ o python nativo) usado pelo cliente gRPC sobre
+# TLS. Definido só se o cert já existir (gerado por 25-tls-secret.sh). Os clientes
+# Python leem REDIS_GRPC_CA; defina vazio (REDIS_GRPC_CA=) para forçar plaintext.
+_CERT_ABS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../${CERT_DIR}" 2>/dev/null && pwd -W 2>/dev/null || true)"
+if [ -n "${_CERT_ABS:-}" ]; then
+  export REDIS_GRPC_CA="${REDIS_GRPC_CA:-${_CERT_ABS}/ca.crt}"
+fi

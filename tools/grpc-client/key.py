@@ -8,8 +8,7 @@ Pré-requisito: o chamador semeou demo:key:a, demo:key:b (string) e demo:key:h
 """
 import sys
 
-import client  # garante generated/ no sys.path
-import grpc
+import client  # garante generated/ no sys.path e expõe make_channel (TLS-aware)
 import key_pb2
 import key_pb2_grpc
 
@@ -21,7 +20,7 @@ ABSENT = "demo:key:absent"
 
 def main():
     target = sys.argv[1] if len(sys.argv) > 1 else "localhost:18080"
-    channel = grpc.insecure_channel(target)
+    channel = client.make_channel(target)  # TLS se REDIS_GRPC_CA estiver definido
     stub = key_pb2_grpc.KeyServiceStub(channel)
     print(f"Conectado a {target} (KeyService).\n")
 

@@ -21,12 +21,23 @@ import string_pb2  # noqa: E402
 import string_pb2_grpc  # noqa: E402
 
 
-def connect(target):
-    """Cria um channel inseguro e o stub do StringService.
+def make_channel(target):
+    """Cria um channel para o alvo. Se a variável de ambiente REDIS_GRPC_CA
+    apontar para um CA (PEM), usa TLS (secure channel) confiando nesse CA;
+    caso contrário, usa texto claro (insecure)."""
+    ca_path = os.environ.get("REDIS_GRPC_CA")
+    if not ca_path:
+        return grpc.insecure_channel(target)
+    with open(ca_path, "rb") as handle:
+        creds = grpc.ssl_channel_credentials(root_certificates=handle.read())
+    return grpc.secure_channel(target, creds)
 
-    Retorna (channel, stub). Lembre de fechar o channel ao final.
+
+def connect(target):
+    """Cria um channel (TLS se REDIS_GRPC_CA estiver definido) e o stub do
+    StringService. Retorna (channel, stub). Lembre de fechar o channel ao final.
     """
-    channel = grpc.insecure_channel(target)
+    channel = make_channel(target)
     stub = string_pb2_grpc.StringServiceStub(channel)
     return channel, stub
 
