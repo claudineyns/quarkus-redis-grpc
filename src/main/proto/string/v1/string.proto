@@ -1,0 +1,144 @@
+syntax = "proto3";
+
+package io.github.claudineyns.redis.grpc.v1;
+
+option java_package = "io.github.claudineyns.redis.grpc.v1";
+option java_multiple_files = true;
+// Nome explícito da outer class: sem isto, o Protobuf derivaria "String" do nome
+// do arquivo (string.proto), ofuscando java.lang.String no código gerado.
+option java_outer_classname = "StringProto";
+
+// Família KEY/VALUE (StringService) — COMPLETA (escopo v1):
+// GET, GETEX, GETDEL, SET, MSET, MGET, INCR, INCRBY, DECR, DECRBY, APPEND, STRLEN.
+service StringService {
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc GetEx(GetExRequest) returns (GetResponse);
+  rpc GetDel(GetDelRequest) returns (GetResponse);
+  rpc Set(SetRequest) returns (SetResponse);
+  rpc MSet(MSetRequest) returns (MSetResponse);
+  rpc MGet(MGetRequest) returns (MGetResponse);
+  rpc Incr(IncrRequest) returns (CounterValue);
+  rpc IncrBy(IncrByRequest) returns (CounterValue);
+  rpc Decr(DecrRequest) returns (CounterValue);
+  rpc DecrBy(DecrByRequest) returns (CounterValue);
+  rpc Append(AppendRequest) returns (LengthValue);
+  rpc Strlen(StrlenRequest) returns (LengthValue);
+}
+
+// ---- GET ----
+message GetRequest {
+  string key = 1;
+}
+
+message GetResponse {
+  optional bytes value = 1;   // ausente = nil do Redis (chave inexistente)
+}
+
+// ---- GETEX ---- (lê o valor e, opcionalmente, altera o TTL; reusa GetResponse)
+message GetExRequest {
+  string key = 1;
+  oneof expiration {                   // nenhum setado = comporta-se como GET
+    int64 ex_seconds        = 2;       // EX
+    int64 px_millis         = 3;       // PX
+    int64 exat_unix_seconds = 4;       // EXAT
+    int64 pxat_unix_millis  = 5;       // PXAT
+    bool  persist           = 6;       // PERSIST (remove o TTL)
+  }
+}
+
+// ---- GETDEL ---- (lê o valor e apaga a chave; reusa GetResponse)
+message GetDelRequest {
+  string key = 1;
+}
+
+// ---- SET ----
+message SetRequest {
+  string key   = 1;
+  bytes  value = 2;
+
+  SetCondition condition = 3;          // NX / XX / nenhuma
+
+  oneof expiration {                   // EX / PX / EXAT / PXAT / KEEPTTL
+    int64 ex_seconds        = 4;
+    int64 px_millis         = 5;
+    int64 exat_unix_seconds = 6;
+    int64 pxat_unix_millis  = 7;
+    bool  keep_ttl          = 8;
+  }
+
+  bool get = 9;                        // GET: devolver o valor antigo
+}
+
+enum SetCondition {
+  SET_CONDITION_UNSPECIFIED = 0;       // sem condição
+  SET_CONDITION_NX = 1;                // só grava se NÃO existe
+  SET_CONDITION_XX = 2;                // só grava se existe
+}
+
+message SetResponse {
+  bool applied = 1;                    // false quando NX/XX barra a gravação
+  optional bytes previous = 2;         // só quando 'get' pedido; ausente = nil
+}
+
+// ---- MSET ----
+message KeyValue {                     // par chave/valor do MSET
+  string key   = 1;
+  bytes  value = 2;
+}
+
+message MSetRequest {
+  repeated KeyValue entries = 1;
+}
+
+message MSetResponse {                 // MSET sempre OK → resposta vazia
+}
+
+// ---- MGET ----
+message MGetRequest {
+  repeated string keys = 1;
+}
+
+message MGetResponse {
+  repeated MGetValue values = 1;       // mesma ordem das keys do request
+}
+
+message MGetValue {
+  optional bytes value = 1;            // ausente = nil (inexistente ou não-string)
+}
+
+// ---- Contadores (INCR/INCRBY; e futuramente DECR/DECRBY) ----
+message IncrRequest {
+  string key = 1;
+}
+
+message IncrByRequest {
+  string key = 1;
+  int64  increment = 2;
+}
+
+message CounterValue {                 // novo valor após a operação
+  int64 value = 1;
+}
+
+message DecrRequest {
+  string key = 1;
+}
+
+message DecrByRequest {
+  string key = 1;
+  int64  decrement = 2;
+}
+
+// ---- APPEND / STRLEN (retornam comprimento) ----
+message AppendRequest {
+  string key   = 1;
+  bytes  value = 2;
+}
+
+message StrlenRequest {
+  string key = 1;
+}
+
+message LengthValue {                  // comprimento (em bytes) da string
+  int64 length = 1;
+}
