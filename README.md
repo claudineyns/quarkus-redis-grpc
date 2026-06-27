@@ -25,5 +25,6 @@ business logic; it translates, forwards, and translates back.
 
 ## Status
 
-Early stage — design is captured in [CLAUDE.md](CLAUDE.md). The client-side
-Quarkus extension is planned as a separate adjacent project once the proxy is stable.
+Early stage — the architecture and design are captured in [docs/DESIGN.md](docs/DESIGN.md).
+The client-side Quarkus extension is planned as a separate adjacent project once the
+proxy is stable.

@@ -1,0 +1,327 @@
+# DESIGN.pt-BR.md — Arquitetura e design do `redis-grpc`
+
+> Documento de arquitetura e design técnico do projeto (versão em **português**).
+> Versão em inglês: [DESIGN.md](DESIGN.md). **Os dois arquivos são mantidos em
+> sincronia** — toda alteração de design deve ser refletida em ambos.
+> A referência principal e as orientações de trabalho do agente estão em
+> [../CLAUDE.md](../CLAUDE.md).
+> Todo código produzido neste repositório DEVE aderir às diretrizes abaixo.
+> Itens marcados como **[EM ABERTO]** ainda não estão decididos — não implemente
+> assumindo um lado sem confirmação.
+
+---
+
+## 1. Propósito e premissa
+
+A aplicação é um **gateway gRPC sobre Redis**: um proxy norte-sul que expõe
+comandos Redis através de uma API gRPC, permitindo que clientes externos
+alcancem um Redis interno do cluster **atravessando a borda corporativa**, que
+só encaminha tráfego HTTP.
+
+**Por que existe:** o protocolo RESP do Redis (TCP cru) não atravessa uma route
+HTTP de borda. Envelopando os comandos em gRPC (HTTP/2), o cliente externo
+alcança o Redis através de uma **route com passthrough de bytes**.
+
+**Restrição de origem:** política corporativa impõe que o Redis seja executado
+como container em OpenShift. Nesta topologia o Redis vive em **namespace
+separado**, alcançável por **Service** intra-cluster.
+
+### Topologia de rede
+
+```
+Cliente externo
+   │  TLS / HTTP2 (gRPC)
+   ▼
+Route (passthrough — TLS termina no POD, não na borda)
+   │
+   ▼
+Service (proxy)  ──►  Pod proxy (esta aplicação)
+                          │  ReactiveRedisAPI (pool, AUTH)
+                          ▼
+                     Service Redis (namespace separado)
+                          │
+                          ▼
+                     Redis (standalone | sentinel)
+```
+
+---
+
+## 2. Princípios mandatórios
+
+1. **Agnosticismo de ambiente no código.** O código NUNCA assume o ambiente de
+   execução. Endereço do Redis, modo (standalone/sentinel), credenciais, TLS e
+   portas vêm 100% de configuração/variáveis de ambiente. A *otimização* para
+   OpenShift mora na configuração/profile, nunca em código condicional.
+
+2. **Mapeamento 1:1 com comandos Redis.** Cada RPC gRPC representa fielmente um
+   comando Redis — mesmos argumentos, mesma semântica, mesmo tipo de retorno.
+   Não há lógica de negócio, agregação ou transformação de dados no proxy.
+
+3. **Binary-safe.** Redis é binary-safe. Valores trafegam como `bytes` no
+   protobuf (nunca `string`). Chaves são `string`. Nada de conversão/validação
+   UTF-8 sobre valores.
+
+4. **Baixa latência é requisito de primeira classe.** Toda decisão considera
+   custo de latência: caminho reativo não-bloqueante fim-a-fim, pool de
+   conexões reutilizado, mínimo de cópias/serializações, porta única HTTP/2.
+
+5. **O proxy não é dono do dado.** Durabilidade, persistência e ciclo de vida
+   são responsabilidade do deployment do Redis. O proxy expõe TTL/EXPIRE com
+   fidelidade para que o cliente controle expiração.
+
+---
+
+## 3. Stack
+
+- **Quarkus** 3.27.3 (build Red Hat — `com.redhat.quarkus.platform`)
+- **Java 21**
+- **gRPC** reativo com **Mutiny** (`Uni`/`Multi`)
+- **Cliente Redis:** **baixo nível** — `ReactiveRedisAPI` (`io.vertx.mutiny.redis.client`)
+
+### 3.1 Escopo do repositório e plano da extensão
+
+**Este repositório é APENAS o proxy** — projeto Maven **módulo único**
+(`io.github.claudineyns:redis-grpc`). Nada de multi-módulo aqui. O proxy deve
+compilar, rodar e operar **isoladamente**.
+
+**Extensão Quarkus — projeto adjacente futuro (decidido):**
+- Quando o proxy atingir uma **versão estável**, será criado um **projeto irmão
+  separado** (diretório adjacente, repositório/projeto próprio) só para a
+  extensão cliente de alto nível.
+- Esse projeto adjacente será uma **extensão Quarkus "de verdade"** — split
+  obrigatório `runtime` + `deployment`, com `@BuildStep`/`@Recorder` e suporte a
+  native image como objetivo. Não é lib/producer simples.
+- **Governança a partir daqui:** este projeto permanece a fonte de verdade que
+  **administra** o projeto adjacente — em especial o **contrato `.proto`**, que é
+  definido e versionado AQUI (papel análogo ao WSDL/XSD compartilhado em SOAP). A
+  extensão consumirá esse contrato; não o redefine.
+
+> Implicação prática: o `.proto` mora neste repositório (`src/main/proto/`) e é o
+> artefato de contrato que o projeto adjacente da extensão irá consumir. A
+> mecânica de compartilhamento (publicar artefato de contrato vs. referência
+> direta) será decidida na fase da extensão.
+
+### Dependências a adicionar ao `pom.xml`
+
+- `io.quarkus:quarkus-grpc` — servidor gRPC + geração de stubs Mutiny a partir de `.proto`
+- `io.quarkus:quarkus-redis-client` — cliente Redis (Vert.x)
+
+> Já presentes e relevantes: `quarkus-tls-registry` (TLS servido pelo pod por
+> causa do passthrough), `quarkus-smallrye-health`, `quarkus-micrometer-registry-prometheus`,
+> `quarkus-smallrye-context-propagation`, Testcontainers, JUnit5, Mockito, REST-Assured, Jacoco.
+
+---
+
+## 4. Cliente Redis
+
+- **API:** `ReactiveRedisAPI` (baixo nível). O alto nível
+  (`ReactiveRedisDataSource`) é **proibido** como API principal — sua tipagem e
+  serialização Jackson quebram a fidelidade 1:1 e o binary-safe.
+- **Modos suportados (via config, sem código condicional):**
+  - **Standalone:** `quarkus.redis.hosts=redis://<host>:<port>`
+  - **Sentinel:** `quarkus.redis.client-type=sentinel`,
+    `quarkus.redis.hosts=redis://<sentinel1>,redis://<sentinel2>,...`,
+    `quarkus.redis.master-name=<master>`
+- **AUTH:** `quarkus.redis.password` (via secret/env). Nunca em código ou commit.
+- **Pool:** dimensionar `quarkus.redis.max-pool-size` / timeouts conforme carga
+  (afinado no profile OpenShift).
+
+---
+
+## 5. Modelagem gRPC / protobuf
+
+- **Mensagens tipadas por comando.** Cada comando tem `Request`/`Response`
+  próprios, espelhando seus argumentos e retorno. Sem envelope genérico.
+- **Tipos:** chave `string`; valor/campo `bytes`; contadores/cardinalidades
+  `int64`; flags como `optional`/enums dedicados.
+- **Ausência (nil do Redis):** representar explicitamente (ex.: `optional bytes`
+  ou um campo `bool found`). Nunca confundir "vazio" com "ausente".
+- **Erros (ver seção 5.1).** Erros reais do Redis viram **status gRPC**;
+  resultados nil/zero/negativos NÃO são erros e permanecem no payload.
+- **Layout:** `.proto` em `src/main/proto/`. **Um service por família** —
+  `StringService`, `HashService`, `SetService`, `KeyService` — mais um
+  `common.proto` com tipos reutilizáveis (opções de expiração, status de erro).
+  Famílias evoluem e versionam isolada­mente; o número de services não custa
+  latência (todos compartilham a mesma conexão HTTP/2).
+- **Pacote e versão:** pacote proto `io.github.claudineyns.redis.grpc.v1`
+  (alinhado ao `groupId`), com `option java_package` correspondente.
+  Versionamento por diretório/pacote (`...v1`) — um `v2` futuro coexiste com
+  `v1` sem quebra. Estrutura de arquivos:
+  ```
+  src/main/proto/
+    common/v1/common.proto   # RedisError, opções de expiração, tipos comuns
+    string/v1/string.proto   # StringService
+    hash/v1/hash.proto       # HashService
+    set/v1/set.proto         # SetService
+    key/v1/key.proto         # KeyService
+  ```
+- **Extensibilidade para batch:** os protos DEVEM ser desenhados para acomodar
+  futuramente um RPC unário `Pipeline` (`repeated` request → `repeated` result
+  com status por item) sem quebra. Ver seção 5.2.
+
+### Superfície de comandos (FECHADA — escopo inicial v1)
+
+Escopo = **Núcleo + Recomendado** das quatro famílias. Comandos "Opcionais"
+ficam como candidatos a v2 (adicionar comando depois é mudança não-quebra).
+
+**KEY/VALUE — `StringService`**
+- `SET` (com `EX`/`PX`/`EXAT`/`PXAT`/`NX`/`XX`/`KEEPTTL`/`GET`), `GET`, `MSET`,
+  `MGET`, `INCR`, `DECR`, `INCRBY`, `DECRBY`, `GETDEL`, `GETEX`, `APPEND`, `STRLEN`
+
+**KEY/HASH — `HashService`**
+- `HSET` (multi-campo), `HGET`, `HMGET`, `HGETALL`, `HDEL`, `HEXISTS`, `HLEN`,
+  `HKEYS`, `HVALS`, `HSETNX`, `HINCRBY`, `HSCAN`
+
+**SET — `SetService`**
+- `SADD`, `SREM`, `SMEMBERS`, `SISMEMBER`, `SCARD`, `SMISMEMBER`, `SPOP`,
+  `SRANDMEMBER`, `SSCAN`, `SINTER`, `SUNION`, `SDIFF`
+
+**KEY (geral) — `KeyService`**
+- `DEL`, `EXISTS`, `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`, `PERSIST`, `TYPE`,
+  `UNLINK`, `EXPIREAT`, `PEXPIREAT`, `SCAN`
+
+> **Cursor (`SCAN`/`HSCAN`/`SSCAN`):** iteração por cursor — modelados como RPC
+> unário com cursor no request e `{ próximo cursor + página }` no response,
+> espelhando o protocolo Redis 1:1 (o cliente conduz o loop; o proxy não itera).
+> - **Cursor é `string` opaco** ("0" = início e fim da iteração). O cliente
+>   apenas devolve o valor recebido, sem interpretá-lo.
+> - **Chaves/campos/membros devolvidos são `string`** (convenção da seção 5).
+>   Nota: chaves Redis são tecnicamente binary-safe; `bytes` fica como refinamento
+>   futuro possível, não adotado agora.
+>
+> **Fora do escopo v1 (candidatos a v2):** `GETSET`, `INCRBYFLOAT`, `SETRANGE`,
+> `GETRANGE`, `HINCRBYFLOAT`, `HRANDFIELD`, `SMOVE`, `S*STORE`, `SINTERCARD`,
+> `RENAME`, `RENAMENX`, `EXPIRETIME`, `PEXPIRETIME`.
+
+### 5.1 Propagação de erros (decisão)
+
+**Regra mental:** resultado semântico do comando = **payload**; erro real do
+Redis ou falha de transporte = **status gRPC**.
+
+**CRÍTICO — nil/zero/negativo NÃO é erro.** Vários retornos do Redis são
+sucessos legítimos e DEVEM ficar no payload (`optional` / `bool found` /
+contadores), nunca virar status de erro:
+- `GET`/`GETDEL`/`GETEX`/`SPOP` em ausência → nil (cache miss é sucesso)
+- `SET ... NX/XX` que não grava → nil
+- `EXISTS`, `SISMEMBER`, `DEL`, `EXPIRE`, `HEXISTS`... → 0 é resultado válido
+
+| Situação | Saída |
+|---|---|
+| Resultado normal, incl. nil/0/negativo | **Payload** |
+| Erro RESP do Redis (`WRONGTYPE`, `ERR…`, `OOM`) | **Status gRPC** + código/mensagem crus do Redis em `google.rpc.ErrorInfo`/trailers |
+| Falha de infra (conexão/timeout/Redis down) | **Status gRPC** `UNAVAILABLE` / `DEADLINE_EXCEEDED` |
+| Token ausente/inválido | **Status gRPC** `UNAUTHENTICATED` (interceptor, antes do Redis) |
+
+Mapeamento erro RESP → status gRPC:
+- `WRONGTYPE` → `FAILED_PRECONDITION`
+- sintaxe/argumentos inválidos → `INVALID_ARGUMENT`
+- `OOM` → `RESOURCE_EXHAUSTED`
+- `NOAUTH`/`WRONGPASS` (config do proxy) → `INTERNAL`
+- demais `ERR …` → `INTERNAL`
+
+A **mensagem crua do Redis** sempre acompanha o status (details/trailers) para
+preservar fidelidade 1:1.
+
+### 5.2 Batch/pipeline (decisão)
+
+**Fora do escopo inicial**, mas previsto. Justificativa: o RTT caro é o **salto
+de borda** (cliente↔cluster); um RPC de lote enviaria N comandos em 1 RTT de
+borda, com pipelining contra o Redis. Quando entrar, será um **RPC unário
+`Pipeline`** (`repeated` request via `oneof` por comando → `repeated` result com
+**status por item**), NÃO streaming bidirecional (reservado para fluxo contínuo).
+
+Regras quando implementado:
+- É **pipelining, não transação** — sem garantia de atomicidade (`MULTI/EXEC`
+  não está coberto). Documentar explicitamente para o cliente.
+- **Falha parcial:** demais comandos prosseguem; cada item carrega seu próprio
+  status. Os protos unários de hoje já devem ser desenhados para encaixar nesse
+  envelope sem quebra.
+
+---
+
+## 6. Segurança
+
+- **Token estático em metadata gRPC.** API key fixa fornecida via secret/env,
+  validada por um **interceptor gRPC** em toda chamada. Sem token válido →
+  `UNAUTHENTICATED`. Nunca em código ou commit.
+- **AUTH no Redis** sempre habilitado (senha via secret).
+- **TLS de borda obrigatório, one-way (sem mTLS).** O pod serve TLS de servidor
+  via `quarkus-tls-registry` (a route é passthrough, então o TLS termina no pod).
+  O cliente valida o servidor; o servidor **não** exige certificado de cliente —
+  a autenticação do chamador é feita pelo **token estático em metadata**.
+- **Sem TLS entre app↔Redis.** A conexão proxy↔Redis é em texto claro dentro do
+  cluster; a proteção desse trecho é `AUTH` + isolamento de rede (NetworkPolicy/
+  namespace), não TLS.
+- **Allowlist de comandos (mandatória).** Por design, SOMENTE os comandos das
+  famílias KEY/VALUE, HASH, SET e KEY-geral (seção 5) são expostos. Comandos
+  destrutivos/admin (`FLUSHALL`, `FLUSHDB`, `CONFIG`, `KEYS`, `SCRIPT`,
+  `SHUTDOWN`, `DEBUG`, etc.) NÃO existem na superfície gRPC — a allowlist é a
+  própria superfície de RPCs, não uma trava configurável a ser ligada/desligada.
+
+---
+
+## 7. Configuração e portas
+
+- **Porta de borda:** gRPC multiplexado no servidor HTTP unificado
+  (`quarkus.grpc.server.use-separate-server=false`) → **uma única porta TLS
+  HTTP/2** → uma só route de passthrough.
+- **Interface de management separada** (`quarkus.management.enabled=true`,
+  porta 9000) para **health** (probes) e **métricas Prometheus** — internos,
+  fora da route de borda.
+- Toda config sensível por secret/env; nada hardcoded.
+
+---
+
+## 8. Observabilidade
+
+- **Health:** `quarkus-smallrye-health` na porta de management (readiness checa
+  conectividade com o Redis).
+- **Métricas:** Prometheus via Micrometer na porta de management.
+- Logs estruturados; nunca logar valores/segredos.
+
+---
+
+## 9. Testes
+
+- **Dev Services** sobem um Redis automaticamente em dev/test (zero config).
+- **`@QuarkusTest`** para testes de integração ponta a ponta (cliente gRPC real
+  → proxy → Redis do Dev Services).
+- **Testcontainers** disponível para cenários que exijam controle explícito
+  (ex.: validar comportamento sob Sentinel/failover).
+- **Cobertura:** Jacoco com merge unit + Quarkus já configurado; reporta para Sonar.
+- Cada comando exposto deve ter teste cobrindo: caminho feliz, ausência (nil),
+  e erro de tipo (`WRONGTYPE`).
+
+---
+
+## 10. Convenções de código
+
+- **Reativo (Mutiny) é a prioridade** — de ponta a ponta; **não bloquear o event
+  loop**; sem `@Blocking` na rota quente.
+- **Virtual threads só quando necessário.** Quando for genuinamente preciso uma
+  thread para trabalho de propósito geral (offload bloqueante inevitável, tarefa
+  de fundo), preferir **virtual threads** (`@RunOnVirtualThread`) em vez do pool
+  de worker threads tradicional. Não é o modelo padrão do caminho quente — é a
+  exceção. Nesses pontos, evitar `synchronized` (usar `ReentrantLock`) para não
+  causar pinning no Java 21.
+- Injeção de campo (CDI) é aceita (regra Sonar `java:S6813` ignorada no pom).
+- Sem lógica de negócio no proxy: traduzir, encaminhar, traduzir de volta.
+- **`final` sempre que aplicável.** Variáveis locais e argumentos de método
+  DEVEM ser declarados `final` onde não houver reatribuição. Reforça imutabilidade
+  e intenção. (Campos injetados por CDI são exceção natural — não podem ser `final`.)
+
+---
+
+## 11. Decisões (rastreador)
+
+- [x] Lista final de comandos por família → Núcleo+Recomendado, com *SCAN (seção 5).
+- [x] RPC de batch/pipeline → fora do escopo inicial, previsto (seção 5.2).
+- [x] Formato/fonte do token → token estático via secret (seção 6).
+- [x] Allowlist de comandos → mandatória, é a própria superfície (seção 6).
+- [x] Organização do `.proto` → 1 service por família + `common.proto` (seção 5).
+- [x] TLS entre app↔Redis → sem TLS interno; borda TLS one-way obrigatório, sem mTLS (seção 6).
+- [x] Formato de propagação de erros Redis → gRPC → status gRPC + msg crua (seção 5.1).
+- [x] Pacote e esquema de versão do `.proto` → `io.github.claudineyns.redis.grpc.v1`, versão por diretório (seção 5).
+- [x] Tipo do cursor / formato das chaves no `*SCAN` → cursor `string` opaco, chaves `string` (seção 5).
+
+> Todas as decisões de arquitetura do escopo v1 estão fechadas.
