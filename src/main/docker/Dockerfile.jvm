@@ -1,0 +1,20 @@
+# Imagem JVM do proxy redis-grpc (Quarkus fast-jar).
+#
+# Usada pelo binary build (Docker strategy) em infra/ocp/20-build-proxy.sh:
+# o contexto enviado ao cluster contém este Dockerfile + a pasta quarkus-app/
+# (copiada de target/quarkus-app após o `mvn package` local).
+FROM registry.access.redhat.com/ubi9/openjdk-21-runtime:latest
+
+ENV LANGUAGE='en_US:en'
+
+# Layout fast-jar do Quarkus, copiado na ordem recomendada para cache de camadas
+# (libs primeiro, que mudam menos; código da app por último).
+COPY --chown=185 quarkus-app/lib/      /deployments/lib/
+COPY --chown=185 quarkus-app/*.jar     /deployments/
+COPY --chown=185 quarkus-app/app/      /deployments/app/
+COPY --chown=185 quarkus-app/quarkus/  /deployments/quarkus/
+
+EXPOSE 8080
+USER 185
+
+ENTRYPOINT ["java", "-jar", "/deployments/quarkus-run.jar"]

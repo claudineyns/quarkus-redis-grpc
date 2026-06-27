@@ -44,6 +44,11 @@ arquitetura, modelagem e decisões estão em [docs/DESIGN.md](docs/DESIGN.md).
 
 - **Build sempre com o `mvn` do sistema** (não usar wrapper `mvnw` nem caçar
   binário alternativo). Ex.: `mvn -B -ntp clean compile`.
+- **Comandos `oc` (OpenShift/CRC):** autenticar sempre como usuário `developer`
+  e usar a estrutura
+  `oc --context ${OC_CXT} -n ${OC_NAMESPACE} <command> [options]` (contexto e
+  namespace via variáveis). Aplicar `MSYS_NO_PATHCONV=1` quando houver caminhos
+  `/...` literais.
 - **Dados temporários em `temp/`.** Usar a pasta `temp/` do projeto para qualquer
   arquivo/dado temporário (não o temp do sistema nem scratchpad). Já está no
   `.gitignore`, então não é versionada.

@@ -3,3 +3,8 @@
 
 target/
 temp/
+
+# Python gRPC client (tools/grpc-client)
+.venv/
+**/generated/
+__pycache__/
