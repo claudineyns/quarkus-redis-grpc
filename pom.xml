@@ -16,6 +16,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Sonar -->
         <sonar.projectKey>redis-grpc</sonar.projectKey>
+        <sonar.projectName>redis-grpc</sonar.projectName>
         <sonar.java.source>21</sonar.java.source>
         <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/jacoco-report/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
         <!-- S6813: field injection é prática padrão e recomendada no Quarkus/CDI -->

@@ -331,6 +331,8 @@ Rules when implemented:
   validating behavior under Sentinel/failover).
 - **Coverage:** Jacoco with unit + Quarkus merge already configured; reports to
   Sonar.
+- **Local Sonar analysis (optional):** `infra/podman/` starts a local SonarQube
+  on podman and runs `verify` + the scanner (see its README).
 - Every exposed command must have tests covering: happy path, absence (nil), and
   type error (`WRONGTYPE`).
 - **Test-specific config** lives in `src/test/resources/application.properties`

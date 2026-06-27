@@ -331,6 +331,8 @@ Regras quando implementado:
 - **Testcontainers** disponível para cenários que exijam controle explícito
   (ex.: validar comportamento sob Sentinel/failover).
 - **Cobertura:** Jacoco com merge unit + Quarkus já configurado; reporta para Sonar.
+- **Análise Sonar local (opcional):** `infra/podman/` sobe um SonarQube local no
+  podman e roda `verify` + o scanner (ver o README de lá).
 - Cada comando exposto deve ter teste cobrindo: caminho feliz, ausência (nil),
   e erro de tipo (`WRONGTYPE`).
 - **Config exclusiva de teste** fica em `src/test/resources/application.properties`
