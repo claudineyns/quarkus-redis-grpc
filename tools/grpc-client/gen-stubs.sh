@@ -5,11 +5,16 @@ set -euo pipefail
 cd "$(dirname "$0")"
 source ./_venv.sh
 
-PROTO_DIR="../../src/main/proto/string/v1"
 mkdir -p generated
 
-"$PY" -m grpc_tools.protoc -I "$PROTO_DIR" \
+# Geração flat por arquivo (cada .proto sem imports cruzados) → string_pb2,
+# key_pb2, etc., diretamente em generated/.
+"$PY" -m grpc_tools.protoc -I "../../src/main/proto/string/v1" \
   --python_out=generated --grpc_python_out=generated \
   string.proto
+
+"$PY" -m grpc_tools.protoc -I "../../src/main/proto/key/v1" \
+  --python_out=generated --grpc_python_out=generated \
+  key.proto
 
 echo "stubs gerados em generated/"
