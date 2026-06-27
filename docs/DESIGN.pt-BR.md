@@ -293,7 +293,27 @@ Regras quando implementado:
 - **Health:** `quarkus-smallrye-health` na porta de management (readiness checa
   conectividade com o Redis).
 - **Métricas:** Prometheus via Micrometer na porta de management.
-- Logs estruturados; nunca logar valores/segredos.
+- **Logging:** ver 8.1.
+
+### 8.1 Logging
+
+- **Framework:** JBoss Logging (`org.jboss.logging.Logger`), o padrão do Quarkus.
+- **Níveis:** logs verbosos por comando em `DEBUG`; ciclo de vida em `INFO`;
+  problemas em `WARN`/`ERROR`. O `DEBUG` é ligado/desligado por ambiente via o
+  nível da categoria (default `INFO`), ex.:
+  `QUARKUS_LOG_CATEGORY__IO_GITHUB_CLAUDINEYNS__LEVEL=DEBUG`.
+- **Formato:** texto puro em todos os ambientes, com o MDC renderizado no
+  pattern (`%X`). Sem JSON.
+- **Correlação (`requestId`):** resolvido como `traceparent` (trace-id do W3C) →
+  `x-request-id` (metadata) → UUID gerado.
+- **Campos de MDC:** `requestId`, `rpc`, `command`, `key`, `status`,
+  `durationMs`, `redisDurationMs`.
+- **Segurança:** NUNCA logar valores nem segredos/token. Chaves SÃO logadas por
+  inteiro.
+- **Mecanismo:** um `ServerInterceptor` gRPC global popula `requestId`/`rpc` e
+  emite uma linha de acesso com `status`/`durationMs`; os serviços adicionam
+  `command`/`key`/`redisDurationMs` e logs de `DEBUG`. O MDC atravessa as
+  fronteiras do Mutiny via `quarkus-smallrye-context-propagation`.
 
 ---
 

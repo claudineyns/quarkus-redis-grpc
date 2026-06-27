@@ -155,6 +155,11 @@
                 <version>3.2.5</version>
                 <configuration>
                     <forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
+                    <!-- Usa o JBoss LogManager no JVM de teste para que o formato
+                         de console (%X/MDC) e os níveis de log se apliquem. -->
+                    <systemPropertyVariables>
+                        <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>

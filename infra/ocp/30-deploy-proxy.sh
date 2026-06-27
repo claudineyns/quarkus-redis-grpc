@@ -33,6 +33,9 @@ spec:
             # Código agnóstico: endereço do Redis injetado por configuração.
             - name: QUARKUS_REDIS_HOSTS
               value: "redis://${REDIS_HOST}:6379"
+            # Nível de log da app (DEBUG no CRC; toggle por ambiente — DESIGN 8.1).
+            - name: QUARKUS_LOG_CATEGORY__IO_GITHUB_CLAUDINEYNS__LEVEL
+              value: "${APP_LOG_LEVEL}"
           ports:
             - name: grpc
               containerPort: 8080
@@ -68,4 +71,7 @@ spec:
       targetPort: 9000
 YAML
 
+# Força um novo rollout para puxar o :latest recém-construído (mesmo sem mudança
+# no spec do Deployment).
+oc --context "$OC_CXT" -n "$PROXY_NAMESPACE" rollout restart deploy/${APP_NAME}
 oc --context "$OC_CXT" -n "$PROXY_NAMESPACE" rollout status deploy/${APP_NAME} --timeout=180s

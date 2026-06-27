@@ -1,5 +1,7 @@
 package io.github.claudineyns.redis.grpc.server;
 
+import org.jboss.logging.Logger;
+
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 
@@ -11,6 +13,8 @@ import io.grpc.StatusRuntimeException;
  * {@code UNAVAILABLE}.
  */
 public final class RedisErrors {
+
+    private static final Logger LOG = Logger.getLogger(RedisErrors.class);
 
     private RedisErrors() {
     }
@@ -27,6 +31,7 @@ public final class RedisErrors {
             default -> Status.INTERNAL;    // demais erros RESP (ex.: "ERR ...")
         };
 
+        LOG.debugf("erro do Redis mapeado: prefixo='%s' -> status %s", prefix, status.getCode().name());
         return status.withDescription(message).withCause(failure).asRuntimeException();
     }
 

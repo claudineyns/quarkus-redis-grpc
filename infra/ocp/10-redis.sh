@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# Implanta um Redis efêmero (sem persistência) no namespace do Redis.
-# Persistência desligada (--save "" --appendonly no) para rodar sob a SCC
-# restricted do OpenShift (UID arbitrário, sem escrita em /data).
+# Implanta um Redis no namespace do Redis, com PERSISTÊNCIA habilitada (AOF)
+# gravando num volume EFÊMERO (emptyDir) montado em /data.
+#
+# O emptyDir é gravável sob a SCC restricted do OpenShift — o fsGroup do projeto
+# torna o volume gravável pelo UID arbitrário do container, permitindo a
+# persistência. É efêmero: sobrevive a reinícios do processo redis no pod, mas
+# NÃO à recriação do pod. (Persistência durável real fica para a fase com
+# PVC/StatefulSet.)
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./env.sh
@@ -27,14 +32,21 @@ spec:
       containers:
         - name: redis
           image: ${REDIS_IMAGE}
-          args: ["redis-server", "--save", "", "--appendonly", "no"]
+          # Persistência habilitada (AOF), gravando no volume efêmero em /data.
+          args: ["redis-server", "--dir", "/data", "--appendonly", "yes"]
           ports:
             - containerPort: 6379
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
           readinessProbe:
             tcpSocket:
               port: 6379
             initialDelaySeconds: 2
             periodSeconds: 5
+      volumes:
+        - name: redis-data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

@@ -1,5 +1,8 @@
 package io.github.claudineyns.redis.grpc.server;
 
+import org.jboss.logging.Logger;
+import org.jboss.logging.MDC;
+
 import com.google.protobuf.ByteString;
 
 import io.github.claudineyns.redis.grpc.v1.GetRequest;
@@ -24,23 +27,39 @@ import jakarta.inject.Inject;
 @GrpcService
 public class StringGrpcService implements StringService {
 
+    private static final Logger LOG = Logger.getLogger(StringGrpcService.class);
+
     @Inject
     Redis redis; // CDI: não pode ser final (exceção da convenção de DESIGN seção 10)
 
     @Override
     public Uni<GetResponse> get(final GetRequest request) {
+        // Metadados desta operação no MDC (propagam pela cadeia Mutiny e saem nas
+        // linhas de log). Valores nunca vão ao log; a chave, sim (DESIGN 8.1).
+        MDC.put("command", "GET");
+        MDC.put("key", request.getKey());
+        LOG.debug("GET recebido");
+
         // Monta o comando Redis "GET <key>" como Request de baixo nível. Usamos
         // Redis + Request (e não a RedisAPI tipada como String) para preservar o
         // binary-safe dos valores — ver DESIGN seção 4.
         final Request command = Request.cmd(Command.GET).arg(request.getKey());
+        final long startNanos = System.nanoTime();
 
         // redis.send devolve um Uni<Response> (não-bloqueante). Encadeamos:
-        //  - map: traduz a Response do Redis para o GetResponse do contrato gRPC;
+        //  - map: mede a latência do Redis, traduz a Response para o GetResponse
+        //    e loga a conclusão;
         //  - onFailure: um erro RESP (ex.: WRONGTYPE) ou falha de infra é
         //    convertido em status gRPC. Resultado normal — inclusive nil — NÃO
         //    passa por aqui; nil é sucesso e sai no payload (DESIGN seção 5.1).
         return redis.send(command)
-                .map(StringGrpcService::toGetResponse)
+                .map(response -> {
+                    MDC.put("redisDurationMs",
+                            Long.toString((System.nanoTime() - startNanos) / 1_000_000L));
+                    final GetResponse result = toGetResponse(response);
+                    LOG.debugf("GET concluído (found=%s)", result.hasValue());
+                    return result;
+                })
                 .onFailure().transform(RedisErrors::toStatus);
     }
 
