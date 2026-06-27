@@ -42,6 +42,8 @@ arquitetura, modelagem e decisões estão em [docs/DESIGN.md](docs/DESIGN.md).
   MSYS_NO_PATHCONV=1 <comando com /caminho/linux>
   ```
 
+- **Build sempre com o `mvn` do sistema** (não usar wrapper `mvnw` nem caçar
+  binário alternativo). Ex.: `mvn -B -ntp clean compile`.
 - **Dados temporários em `temp/`.** Usar a pasta `temp/` do projeto para qualquer
   arquivo/dado temporário (não o temp do sistema nem scratchpad). Já está no
   `.gitignore`, então não é versionada.
@@ -60,21 +62,15 @@ arquitetura, modelagem e decisões estão em [docs/DESIGN.md](docs/DESIGN.md).
 
 ## 2. Modo de trabalho: discutir antes de implementar (MANDATÓRIO)
 
-Este projeto também é um **aprendizado de gRPC** para o autor, que **não é
-especialista** no protocolo. Portanto:
-
 - **Toda intenção de implementação DEVE ser submetida à discussão ANTES de ser
   aplicada.** Não escrever/alterar código de produção sem aprovação prévia da
-  abordagem.
-- Explicar o **porquê** das escolhas de gRPC/protobuf em linguagem didática
-  (conceitos: HTTP/2, unary vs. streaming, mensagens, `oneof`, status x payload,
-  interceptors, geração de stubs, etc.) — não assumir familiaridade.
-- Apresentar trade-offs e uma recomendação; só implementar após o "ok".
-- **Ancoragem didática:** o autor conhece **JSON-RPC** e **SOAP/WSDL**. Explicar
-  gRPC por analogia com esses modelos (ex.: `.proto` ≈ contrato como o WSDL;
-  `service`/`rpc` ≈ operações; protobuf ≈ payload binário no lugar de XML/JSON;
-  HTTP/2 + streaming como diferencial).
-- **Escopo do fluxo de discussão:** editar `CLAUDE.md`, `docs/DESIGN.md` e demais
-  arquivos de configuração/documentação para **registrar decisões** é permitido
-  durante a conversa; **código-fonte da aplicação, não** — esse passa pelo fluxo
-  de discussão primeiro.
+  abordagem. Apresentar trade-offs e uma recomendação; só implementar após o "ok".
+- **Aulas didáticas são sob demanda.** Por padrão, NÃO dar aulas/explicações
+  conceituais extensas — ir direto à discussão de implementação. O autor solicita
+  uma **"aula excepcional"** quando tiver dúvida; aí sim explicar o conceito de
+  gRPC/protobuf em profundidade, ancorando em **JSON-RPC** e **SOAP/WSDL** (modelos
+  que ele conhece).
+- **Escopo do fluxo de discussão:** editar `CLAUDE.md`, `docs/DESIGN.md` /
+  `docs/DESIGN.pt-BR.md` e demais arquivos de config/documentação para **registrar
+  decisões** é permitido durante a conversa; **código-fonte da aplicação, não** —
+  esse passa pelo fluxo de discussão primeiro.

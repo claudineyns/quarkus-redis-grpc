@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package io.github.claudineyns.redis.grpc.v1;
+
+option java_package = "io.github.claudineyns.redis.grpc.v1";
+option java_multiple_files = true;
+// Nome explícito da outer class: sem isto, o Protobuf derivaria "String" do nome
+// do arquivo (string.proto), ofuscando java.lang.String no código gerado.
+option java_outer_classname = "StringProto";
+
+// Família KEY/VALUE — fatia inicial: GET e SET.
+service StringService {
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Set(SetRequest) returns (SetResponse);
+}
+
+// ---- GET ----
+message GetRequest {
+  string key = 1;
+}
+
+message GetResponse {
+  optional bytes value = 1;   // ausente = nil do Redis (chave inexistente)
+}
+
+// ---- SET ----
+message SetRequest {
+  string key   = 1;
+  bytes  value = 2;
+
+  SetCondition condition = 3;          // NX / XX / nenhuma
+
+  oneof expiration {                   // EX / PX / EXAT / PXAT / KEEPTTL
+    int64 ex_seconds        = 4;
+    int64 px_millis         = 5;
+    int64 exat_unix_seconds = 6;
+    int64 pxat_unix_millis  = 7;
+    bool  keep_ttl          = 8;
+  }
+
+  bool get = 9;                        // GET: devolver o valor antigo
+}
+
+enum SetCondition {
+  SET_CONDITION_UNSPECIFIED = 0;       // sem condição
+  SET_CONDITION_NX = 1;                // só grava se NÃO existe
+  SET_CONDITION_XX = 2;                // só grava se existe
+}
+
+message SetResponse {
+  bool applied = 1;                    // false quando NX/XX barra a gravação
+  optional bytes previous = 2;         // só quando 'get' pedido; ausente = nil
+}

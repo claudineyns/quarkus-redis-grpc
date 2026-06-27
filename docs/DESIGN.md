@@ -36,7 +36,7 @@ Route (passthrough — TLS terminates at the POD, not at the edge)
    │
    ▼
 Service (proxy)  ──►  Proxy pod (this application)
-                          │  ReactiveRedisAPI (pool, AUTH)
+                          │  Redis client (Request/Response, pool, AUTH)
                           ▼
                      Redis Service (separate namespace)
                           │
@@ -76,7 +76,7 @@ Service (proxy)  ──►  Proxy pod (this application)
 - **Quarkus** 3.27.3 (Red Hat build — `com.redhat.quarkus.platform`)
 - **Java 21**
 - **gRPC** reactive with **Mutiny** (`Uni`/`Multi`)
-- **Redis client:** **low-level** — `ReactiveRedisAPI` (`io.vertx.mutiny.redis.client`)
+- **Redis client:** **low-level** — `io.vertx.mutiny.redis.client.Redis` with `Request`/`Response`
 
 ### 3.1 Repository scope and extension plan
 
@@ -114,9 +114,14 @@ compile, run, and operate **in isolation**.
 
 ## 4. Redis client
 
-- **API:** `ReactiveRedisAPI` (low-level). The high-level
-  (`ReactiveRedisDataSource`) is **forbidden** as the primary API — its typing and
-  Jackson serialization break 1:1 fidelity and binary-safety.
+- **API:** the low-level Mutiny **`Redis`** client
+  (`io.vertx.mutiny.redis.client.Redis`), building commands with
+  **`Request`**/**`Command`** and reading **`Response`**. Commands MUST be built
+  with `Request.cmd(Command.X).arg(...)`, using **byte[] args for values**
+  (binary-safe); a `null` `Response` means Redis nil. The typed
+  `RedisAPI`/`ReactiveRedisAPI` is **not used** — its methods are `String`-typed
+  and would break binary-safety. The high-level `ReactiveRedisDataSource` is
+  **forbidden** as well — its typing and Jackson serialization break 1:1 fidelity.
 - **Supported modes (via config, no conditional code):**
   - **Standalone:** `quarkus.redis.hosts=redis://<host>:<port>`
   - **Sentinel:** `quarkus.redis.client-type=sentinel`,
@@ -138,22 +143,32 @@ compile, run, and operate **in isolation**.
   `bool found` field). Never conflate "empty" with "absent".
 - **Errors (see section 5.1).** Real Redis errors become **gRPC status**;
   nil/zero/negative results are NOT errors and stay in the payload.
-- **Layout:** `.proto` under `src/main/proto/`. **One service per family** —
-  `StringService`, `HashService`, `SetService`, `KeyService` — plus a
-  `common.proto` with reusable types (expiration options, error status). Families
-  evolve and version independently; the number of services costs no latency (they
-  all share the same HTTP/2 connection).
+- **Layout:** `.proto` under `src/main/proto/`, **one service per family** —
+  `StringService`, `HashService`, `SetService`, `KeyService`. Families evolve and
+  version independently; the number of services costs no latency (they all share
+  the same HTTP/2 connection).
+- **`common.proto` is deferred.** Originally planned for shared types, it is NOT
+  created until a genuinely shared type emerges. Errors travel via gRPC status
+  using `google.rpc.ErrorInfo` (resolved on the Java side), so no `RedisError`
+  payload type is needed in the contract; expiration options are modeled
+  per-command for now.
+- **Java options (per file):** each family `.proto` sets
+  `option java_multiple_files = true` and an explicit
+  `option java_outer_classname = "<Family>Proto"`. The explicit outer class name
+  is **mandatory** to avoid the name protobuf derives from the filename colliding
+  with Java types — e.g., `string.proto` would otherwise generate a `String` outer
+  class that shadows `java.lang.String` and breaks compilation.
 - **Package and version:** proto package `io.github.claudineyns.redis.grpc.v1`
   (aligned with the `groupId`), with a matching `option java_package`.
   Versioning by directory/package (`...v1`) — a future `v2` coexists with `v1`
   without breaking. File structure:
   ```
   src/main/proto/
-    common/v1/common.proto   # RedisError, expiration options, common types
-    string/v1/string.proto   # StringService
+    string/v1/string.proto   # StringService  (GET, SET so far)
     hash/v1/hash.proto       # HashService
     set/v1/set.proto         # SetService
     key/v1/key.proto         # KeyService
+    # common/v1/common.proto — deferred until a shared type is needed
   ```
 - **Batch extensibility:** the protos MUST be designed to later accommodate a
   unary `Pipeline` RPC (`repeated` request → `repeated` result with per-item
@@ -293,6 +308,9 @@ Rules when implemented:
   Sonar.
 - Every exposed command must have tests covering: happy path, absence (nil), and
   type error (`WRONGTYPE`).
+- **Test-specific config** lives in `src/test/resources/application.properties`
+  (merged with the main file during tests, taking precedence) — e.g., the gRPC
+  test client host/port. No `%test.` prefix needed there.
 
 ---
 
@@ -311,6 +329,9 @@ Rules when implemented:
 - **`final` wherever applicable.** Local variables and method arguments MUST be
   declared `final` where there is no reassignment. Reinforces immutability and
   intent. (CDI-injected fields are a natural exception — they cannot be `final`.)
+- **Didactic comments.** This is also a learning project: enrich implemented
+  methods with explanatory comments wherever pertinent — favor the *why* (Redis
+  semantics, gRPC/protobuf decisions, mapping choices) over the obvious *what*.
 
 ---
 
