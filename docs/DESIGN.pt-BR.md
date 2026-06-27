@@ -168,7 +168,7 @@ compilar, rodar e operar **isoladamente**.
     string/v1/string.proto   # StringService  (COMPLETO para v1)
     hash/v1/hash.proto       # HashService
     set/v1/set.proto         # SetService
-    key/v1/key.proto         # KeyService  (fatia 1: DEL, UNLINK, EXISTS, TYPE)
+    key/v1/key.proto         # KeyService  (fatias 1-2: DEL/UNLINK/EXISTS/TYPE, família EXPIRE, TTL/PTTL)
     # common/v1/common.proto — adiado até haver um tipo compartilhado
   ```
 - **Extensibilidade para batch:** os protos DEVEM ser desenhados para acomodar

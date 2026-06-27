@@ -7,9 +7,19 @@ import org.jboss.logging.MDC;
 
 import io.github.claudineyns.redis.grpc.v1.DelRequest;
 import io.github.claudineyns.redis.grpc.v1.ExistsRequest;
+import io.github.claudineyns.redis.grpc.v1.ExpireAtRequest;
+import io.github.claudineyns.redis.grpc.v1.ExpireCondition;
+import io.github.claudineyns.redis.grpc.v1.ExpireRequest;
+import io.github.claudineyns.redis.grpc.v1.KeyChange;
 import io.github.claudineyns.redis.grpc.v1.KeyCount;
 import io.github.claudineyns.redis.grpc.v1.KeyService;
 import io.github.claudineyns.redis.grpc.v1.KeyType;
+import io.github.claudineyns.redis.grpc.v1.PExpireAtRequest;
+import io.github.claudineyns.redis.grpc.v1.PExpireRequest;
+import io.github.claudineyns.redis.grpc.v1.PTtlRequest;
+import io.github.claudineyns.redis.grpc.v1.PersistRequest;
+import io.github.claudineyns.redis.grpc.v1.TtlRequest;
+import io.github.claudineyns.redis.grpc.v1.TtlValue;
 import io.github.claudineyns.redis.grpc.v1.TypeRequest;
 import io.github.claudineyns.redis.grpc.v1.UnlinkRequest;
 import io.grpc.Status;
@@ -36,6 +46,19 @@ public class KeyGrpcService implements KeyService {
     private static final String CMD_UNLINK = "UNLINK";
     private static final String CMD_EXISTS = "EXISTS";
     private static final String CMD_TYPE = "TYPE";
+    private static final String CMD_EXPIRE = "EXPIRE";
+    private static final String CMD_PEXPIRE = "PEXPIRE";
+    private static final String CMD_EXPIREAT = "EXPIREAT";
+    private static final String CMD_PEXPIREAT = "PEXPIREAT";
+    private static final String CMD_PERSIST = "PERSIST";
+    private static final String CMD_TTL = "TTL";
+    private static final String CMD_PTTL = "PTTL";
+
+    // Condições do EXPIRE (Redis 7+).
+    private static final String OPT_NX = "NX";
+    private static final String OPT_XX = "XX";
+    private static final String OPT_GT = "GT";
+    private static final String OPT_LT = "LT";
 
     private static final String TYPE_NONE = "none";
 
@@ -75,6 +98,113 @@ public class KeyGrpcService implements KeyService {
                     final String type = response == null ? TYPE_NONE : response.toString();
                     LOG.debugf("TYPE concluído (type=%s)", type);
                     return KeyType.newBuilder().setType(type).build();
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<KeyChange> expire(final ExpireRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_EXPIRE);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("EXPIRE recebido");
+        final Request command = Request.cmd(Command.EXPIRE)
+                .arg(request.getKey()).arg(request.getSeconds());
+        appendExpireCondition(command, request.getCondition());
+        return sendChange(command, CMD_EXPIRE);
+    }
+
+    @Override
+    public Uni<KeyChange> pExpire(final PExpireRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_PEXPIRE);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("PEXPIRE recebido");
+        final Request command = Request.cmd(Command.PEXPIRE)
+                .arg(request.getKey()).arg(request.getMillis());
+        appendExpireCondition(command, request.getCondition());
+        return sendChange(command, CMD_PEXPIRE);
+    }
+
+    @Override
+    public Uni<KeyChange> expireAt(final ExpireAtRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_EXPIREAT);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("EXPIREAT recebido");
+        final Request command = Request.cmd(Command.EXPIREAT)
+                .arg(request.getKey()).arg(request.getUnixSeconds());
+        appendExpireCondition(command, request.getCondition());
+        return sendChange(command, CMD_EXPIREAT);
+    }
+
+    @Override
+    public Uni<KeyChange> pExpireAt(final PExpireAtRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_PEXPIREAT);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("PEXPIREAT recebido");
+        final Request command = Request.cmd(Command.PEXPIREAT)
+                .arg(request.getKey()).arg(request.getUnixMillis());
+        appendExpireCondition(command, request.getCondition());
+        return sendChange(command, CMD_PEXPIREAT);
+    }
+
+    @Override
+    public Uni<KeyChange> persist(final PersistRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_PERSIST);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("PERSIST recebido");
+        return sendChange(Request.cmd(Command.PERSIST).arg(request.getKey()), CMD_PERSIST);
+    }
+
+    @Override
+    public Uni<TtlValue> ttl(final TtlRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_TTL);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("TTL recebido");
+        return sendTtl(Request.cmd(Command.TTL).arg(request.getKey()), CMD_TTL);
+    }
+
+    @Override
+    public Uni<TtlValue> pTtl(final PTtlRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_PTTL);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("PTTL recebido");
+        return sendTtl(Request.cmd(Command.PTTL).arg(request.getKey()), CMD_PTTL);
+    }
+
+    /** Acrescenta a condição NX/XX/GT/LT ao comando, quando informada. */
+    private static void appendExpireCondition(final Request command, final ExpireCondition condition) {
+        switch (condition) {
+            case EXPIRE_CONDITION_NX -> command.arg(OPT_NX);
+            case EXPIRE_CONDITION_XX -> command.arg(OPT_XX);
+            case EXPIRE_CONDITION_GT -> command.arg(OPT_GT);
+            case EXPIRE_CONDITION_LT -> command.arg(OPT_LT);
+            default -> { /* UNSPECIFIED / UNRECOGNIZED → sem condição */ }
+        }
+    }
+
+    /** EXPIRE-família + PERSIST: traduz o 0/1 do Redis em KeyChange{applied}. */
+    private Uni<KeyChange> sendChange(final Request command, final String label) {
+        final long startNanos = System.nanoTime();
+        return redis.send(command)
+                .map(response -> {
+                    MDC.put(LogFields.REDIS_DURATION_MS,
+                            Long.toString((System.nanoTime() - startNanos) / 1_000_000L));
+                    final boolean applied = response != null && response.toLong() == 1L;
+                    LOG.debugf("%s concluído (applied=%s)", label, applied);
+                    return KeyChange.newBuilder().setApplied(applied).build();
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    /** TTL/PTTL: tempo restante; -1 sem TTL, -2 chave inexistente (crus). */
+    private Uni<TtlValue> sendTtl(final Request command, final String label) {
+        final long startNanos = System.nanoTime();
+        return redis.send(command)
+                .map(response -> {
+                    MDC.put(LogFields.REDIS_DURATION_MS,
+                            Long.toString((System.nanoTime() - startNanos) / 1_000_000L));
+                    final long value = response.toLong();
+                    LOG.debugf("%s concluído (value=%d)", label, value);
+                    return TtlValue.newBuilder().setValue(value).build();
                 })
                 .onFailure().transform(RedisErrors::toStatus);
     }
