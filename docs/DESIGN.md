@@ -351,6 +351,10 @@ Rules when implemented:
 - **Didactic comments.** This is also a learning project: enrich implemented
   methods with explanatory comments wherever pertinent — favor the *why* (Redis
   semantics, gRPC/protobuf decisions, mapping choices) over the obvious *what*.
+- **String constants.** Whenever practical, associate static/repeated string
+  literals with named constants (avoids duplication and pre-empts Sonar
+  `java:S1192`) — including `switch` case labels, which accept compile-time
+  constants (`static final String` initialized from a literal).
 
 ---
 

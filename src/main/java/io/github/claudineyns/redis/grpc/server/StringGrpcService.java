@@ -29,6 +29,8 @@ public class StringGrpcService implements StringService {
 
     private static final Logger LOG = Logger.getLogger(StringGrpcService.class);
 
+    private static final String CMD_GET = "GET";
+
     @Inject
     Redis redis; // CDI: não pode ser final (exceção da convenção de DESIGN seção 10)
 
@@ -36,8 +38,8 @@ public class StringGrpcService implements StringService {
     public Uni<GetResponse> get(final GetRequest request) {
         // Metadados desta operação no MDC (propagam pela cadeia Mutiny e saem nas
         // linhas de log). Valores nunca vão ao log; a chave, sim (DESIGN 8.1).
-        MDC.put("command", "GET");
-        MDC.put("key", request.getKey());
+        MDC.put(LogFields.COMMAND, CMD_GET);
+        MDC.put(LogFields.KEY, request.getKey());
         LOG.debug("GET recebido");
 
         // Monta o comando Redis "GET <key>" como Request de baixo nível. Usamos
@@ -54,7 +56,7 @@ public class StringGrpcService implements StringService {
         //    passa por aqui; nil é sucesso e sai no payload (DESIGN seção 5.1).
         return redis.send(command)
                 .map(response -> {
-                    MDC.put("redisDurationMs",
+                    MDC.put(LogFields.REDIS_DURATION_MS,
                             Long.toString((System.nanoTime() - startNanos) / 1_000_000L));
                     final GetResponse result = toGetResponse(response);
                     LOG.debugf("GET concluído (found=%s)", result.hasValue());

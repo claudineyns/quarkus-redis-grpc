@@ -352,6 +352,10 @@ Regras quando implementado:
   métodos implementados com comentários explicativos sempre que pertinente —
   priorizar o *porquê* (semântica do Redis, decisões de gRPC/protobuf, escolhas de
   mapeamento) em vez do *o quê* óbvio.
+- **Constantes para strings.** Sempre que possível, associar literais de string
+  estáticos/repetidos a constantes nomeadas (evita duplicação e previne o Sonar
+  `java:S1192`) — inclusive em rótulos de `switch`, que aceitam constantes de
+  compilação (`static final String` inicializada a partir de um literal).
 
 ---
 

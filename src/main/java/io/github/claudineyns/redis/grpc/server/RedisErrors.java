@@ -16,19 +16,27 @@ public final class RedisErrors {
 
     private static final Logger LOG = Logger.getLogger(RedisErrors.class);
 
+    // Constantes de tempo de compilação (literais) — válidas como rótulos de
+    // 'case' e evitam literais repetidos (Sonar java:S1192).
+    private static final String EMPTY = "";
+    private static final String ERR_WRONGTYPE = "WRONGTYPE";
+    private static final String ERR_OOM = "OOM";
+    private static final String ERR_NOAUTH = "NOAUTH";
+    private static final String ERR_WRONGPASS = "WRONGPASS";
+
     private RedisErrors() {
     }
 
     public static StatusRuntimeException toStatus(final Throwable failure) {
-        final String message = failure.getMessage() == null ? "" : failure.getMessage();
+        final String message = failure.getMessage() == null ? EMPTY : failure.getMessage();
         final String prefix = redisErrorPrefix(message);
 
         final Status status = switch (prefix) {
-            case "WRONGTYPE" -> Status.FAILED_PRECONDITION;
-            case "OOM" -> Status.RESOURCE_EXHAUSTED;
-            case "NOAUTH", "WRONGPASS" -> Status.INTERNAL;
-            case "" -> Status.UNAVAILABLE; // sem prefixo RESP → falha de infra/transporte
-            default -> Status.INTERNAL;    // demais erros RESP (ex.: "ERR ...")
+            case ERR_WRONGTYPE -> Status.FAILED_PRECONDITION;
+            case ERR_OOM -> Status.RESOURCE_EXHAUSTED;
+            case ERR_NOAUTH, ERR_WRONGPASS -> Status.INTERNAL;
+            case EMPTY -> Status.UNAVAILABLE; // sem prefixo RESP → falha de infra/transporte
+            default -> Status.INTERNAL;       // demais erros RESP (ex.: "ERR ...")
         };
 
         LOG.debugf("erro do Redis mapeado: prefixo='%s' -> status %s", prefix, status.getCode().name());
@@ -44,6 +52,6 @@ public final class RedisErrors {
         final String firstToken = space < 0 ? message : message.substring(0, space);
         final boolean looksLikeRespCode = !firstToken.isEmpty()
                 && firstToken.chars().allMatch(c -> c >= 'A' && c <= 'Z');
-        return looksLikeRespCode ? firstToken : "";
+        return looksLikeRespCode ? firstToken : EMPTY;
     }
 }

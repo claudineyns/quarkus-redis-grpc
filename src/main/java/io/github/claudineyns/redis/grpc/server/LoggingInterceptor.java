@@ -48,8 +48,8 @@ public class LoggingInterceptor implements ServerInterceptor {
         final String rpc = call.getMethodDescriptor().getFullMethodName();
         final long startNanos = System.nanoTime();
 
-        MDC.put("requestId", requestId);
-        MDC.put("rpc", rpc);
+        MDC.put(LogFields.REQUEST_ID, requestId);
+        MDC.put(LogFields.RPC, rpc);
         LOG.debug("chamada gRPC recebida");
 
         // Envolve a chamada para capturar o status final e medir a latência total
@@ -59,8 +59,8 @@ public class LoggingInterceptor implements ServerInterceptor {
                     @Override
                     public void close(final Status status, final Metadata trailers) {
                         final long durationMs = (System.nanoTime() - startNanos) / 1_000_000L;
-                        MDC.put("status", status.getCode().name());
-                        MDC.put("durationMs", Long.toString(durationMs));
+                        MDC.put(LogFields.STATUS, status.getCode().name());
+                        MDC.put(LogFields.DURATION_MS, Long.toString(durationMs));
                         if (status.isOk()) {
                             LOG.debug("chamada gRPC concluída");
                         } else {
