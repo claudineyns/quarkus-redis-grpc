@@ -8,9 +8,10 @@ option java_multiple_files = true;
 // do arquivo (string.proto), ofuscando java.lang.String no código gerado.
 option java_outer_classname = "StringProto";
 
-// Família KEY/VALUE. Implementados: GET, SET, MSET, MGET, INCR, INCRBY, DECR, DECRBY.
+// Família KEY/VALUE. Implementados: GET, GETEX, SET, MSET, MGET, INCR, INCRBY, DECR, DECRBY.
 service StringService {
   rpc Get(GetRequest) returns (GetResponse);
+  rpc GetEx(GetExRequest) returns (GetResponse);
   rpc Set(SetRequest) returns (SetResponse);
   rpc MSet(MSetRequest) returns (MSetResponse);
   rpc MGet(MGetRequest) returns (MGetResponse);
@@ -27,6 +28,18 @@ message GetRequest {
 
 message GetResponse {
   optional bytes value = 1;   // ausente = nil do Redis (chave inexistente)
+}
+
+// ---- GETEX ---- (lê o valor e, opcionalmente, altera o TTL; reusa GetResponse)
+message GetExRequest {
+  string key = 1;
+  oneof expiration {                   // nenhum setado = comporta-se como GET
+    int64 ex_seconds        = 2;       // EX
+    int64 px_millis         = 3;       // PX
+    int64 exat_unix_seconds = 4;       // EXAT
+    int64 pxat_unix_millis  = 5;       // PXAT
+    bool  persist           = 6;       // PERSIST (remove o TTL)
+  }
 }
 
 // ---- SET ----

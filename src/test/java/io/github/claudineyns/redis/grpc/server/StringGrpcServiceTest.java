@@ -13,6 +13,7 @@ import com.google.protobuf.ByteString;
 import io.github.claudineyns.redis.grpc.v1.CounterValue;
 import io.github.claudineyns.redis.grpc.v1.DecrByRequest;
 import io.github.claudineyns.redis.grpc.v1.DecrRequest;
+import io.github.claudineyns.redis.grpc.v1.GetExRequest;
 import io.github.claudineyns.redis.grpc.v1.GetRequest;
 import io.github.claudineyns.redis.grpc.v1.GetResponse;
 import io.github.claudineyns.redis.grpc.v1.IncrByRequest;
@@ -346,6 +347,63 @@ class StringGrpcServiceTest {
         assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
     }
 
+    // ---------- GETEX ----------
+
+    @Test
+    void getExNoOptionReturnsValueKeepingTtl() {
+        final String key = "test:getex:keep";
+        seedWithTtl(key, "v", 100);
+
+        final GetResponse response = client.getEx(
+                GetExRequest.newBuilder().setKey(key).build()).await().indefinitely();
+
+        assertTrue(response.hasValue());
+        assertEquals("v", response.getValue().toStringUtf8());
+        assertTrue(ttl(key) > 0, "TTL deveria ter sido mantido");
+    }
+
+    @Test
+    void getExWithExSetsTtl() {
+        final String key = "test:getex:setttl";
+        seed(key, "v"); // sem TTL
+
+        final GetResponse response = client.getEx(GetExRequest.newBuilder()
+                .setKey(key).setExSeconds(100).build()).await().indefinitely();
+
+        assertEquals("v", response.getValue().toStringUtf8());
+        assertTrue(ttl(key) > 0, "TTL deveria ter sido definido");
+    }
+
+    @Test
+    void getExPersistRemovesTtl() {
+        final String key = "test:getex:persist";
+        seedWithTtl(key, "v", 100);
+
+        final GetResponse response = client.getEx(GetExRequest.newBuilder()
+                .setKey(key).setPersist(true).build()).await().indefinitely();
+
+        assertEquals("v", response.getValue().toStringUtf8());
+        assertEquals(-1L, ttl(key)); // -1 = sem TTL (persistente)
+    }
+
+    @Test
+    void getExOnAbsentReturnsNoValue() {
+        final GetResponse response = client.getEx(
+                GetExRequest.newBuilder().setKey("test:getex:absent").build())
+                .await().indefinitely();
+        assertFalse(response.hasValue());
+    }
+
+    @Test
+    void getExOnWrongTypeFails() {
+        final String key = "test:getex:hash";
+        redis.send(Request.cmd(Command.HSET).arg(key).arg("f").arg("v")).await().indefinitely();
+
+        final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
+                client.getEx(GetExRequest.newBuilder().setKey(key).build()).await().indefinitely());
+        assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
+    }
+
     // ---------- helpers ----------
 
     private static KeyValue kv(final String key, final String value) {
@@ -358,6 +416,15 @@ class StringGrpcServiceTest {
 
     private void seed(final String key, final String value) {
         redis.send(Request.cmd(Command.SET).arg(key).arg(value)).await().indefinitely();
+    }
+
+    private void seedWithTtl(final String key, final String value, final long seconds) {
+        redis.send(Request.cmd(Command.SET).arg(key).arg(value).arg("EX").arg(Long.toString(seconds)))
+                .await().indefinitely();
+    }
+
+    private long ttl(final String key) {
+        return redis.send(Request.cmd(Command.TTL).arg(key)).await().indefinitely().toLong();
     }
 
     private String getValue(final String key) {

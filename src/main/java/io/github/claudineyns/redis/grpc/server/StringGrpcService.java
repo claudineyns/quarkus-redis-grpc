@@ -8,6 +8,7 @@ import com.google.protobuf.ByteString;
 import io.github.claudineyns.redis.grpc.v1.CounterValue;
 import io.github.claudineyns.redis.grpc.v1.DecrByRequest;
 import io.github.claudineyns.redis.grpc.v1.DecrRequest;
+import io.github.claudineyns.redis.grpc.v1.GetExRequest;
 import io.github.claudineyns.redis.grpc.v1.GetRequest;
 import io.github.claudineyns.redis.grpc.v1.GetResponse;
 import io.github.claudineyns.redis.grpc.v1.IncrByRequest;
@@ -42,6 +43,7 @@ public class StringGrpcService implements StringService {
     private static final Logger LOG = Logger.getLogger(StringGrpcService.class);
 
     private static final String CMD_GET = "GET";
+    private static final String CMD_GETEX = "GETEX";
     private static final String CMD_SET = "SET";
     private static final String CMD_MSET = "MSET";
     private static final String CMD_MGET = "MGET";
@@ -56,6 +58,7 @@ public class StringGrpcService implements StringService {
     private static final String OPT_EXAT = "EXAT";
     private static final String OPT_PXAT = "PXAT";
     private static final String OPT_KEEPTTL = "KEEPTTL";
+    private static final String OPT_PERSIST = "PERSIST";
     private static final String OPT_NX = "NX";
     private static final String OPT_XX = "XX";
     private static final String OPT_GET = "GET";
@@ -92,6 +95,49 @@ public class StringGrpcService implements StringService {
                     return result;
                 })
                 .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<GetResponse> getEx(final GetExRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_GETEX);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("GETEX recebido");
+
+        final Request command = buildGetExCommand(request);
+        final long startNanos = System.nanoTime();
+
+        // Mesma forma de resposta do GET (valor/nil) → reusa toGetResponse.
+        return redis.send(command)
+                .map(response -> {
+                    MDC.put(LogFields.REDIS_DURATION_MS,
+                            Long.toString((System.nanoTime() - startNanos) / 1_000_000L));
+                    final GetResponse result = toGetResponse(response);
+                    LOG.debugf("GETEX concluído (found=%s)", result.hasValue());
+                    return result;
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    /**
+     * Monta "GETEX key [EX|PX|EXAT|PXAT|PERSIST]". Sem opção de expiração,
+     * comporta-se como GET (não altera o TTL).
+     */
+    private static Request buildGetExCommand(final GetExRequest request) {
+        final Request command = Request.cmd(Command.GETEX).arg(request.getKey());
+
+        switch (request.getExpirationCase()) {
+            case EX_SECONDS -> command.arg(OPT_EX).arg(request.getExSeconds());
+            case PX_MILLIS -> command.arg(OPT_PX).arg(request.getPxMillis());
+            case EXAT_UNIX_SECONDS -> command.arg(OPT_EXAT).arg(request.getExatUnixSeconds());
+            case PXAT_UNIX_MILLIS -> command.arg(OPT_PXAT).arg(request.getPxatUnixMillis());
+            case PERSIST -> {
+                if (request.getPersist()) {
+                    command.arg(OPT_PERSIST);
+                }
+            }
+            case EXPIRATION_NOT_SET -> { /* sem alteração de TTL (= GET) */ }
+        }
+        return command;
     }
 
     @Override
