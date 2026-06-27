@@ -24,6 +24,9 @@ export EDGE_HOST="${EDGE_HOST:-redis-grpc.apps-crc.testing}"
 export TLS_SECRET="${TLS_SECRET:-redis-grpc-tls}"
 export CERT_DIR="${CERT_DIR:-temp/tls}"
 
+# Secret com a chave mestra (HMAC) do interceptor de credenciais (DESIGN 6.1).
+export AUTH_SECRET="${AUTH_SECRET:-redis-grpc-auth}"
+
 # CA local (em formato Windows, p/ o python nativo) usado pelo cliente gRPC sobre
 # TLS. Definido só se o cert já existir (gerado por 25-tls-secret.sh). Os clientes
 # Python leem REDIS_GRPC_CA; defina vazio (REDIS_GRPC_CA=) para forçar plaintext.

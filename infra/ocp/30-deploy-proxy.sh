@@ -45,6 +45,13 @@ spec:
               value: /var/certificados/servidor/tls.crt
             - name: QUARKUS_TLS_HTTPS_KEY_STORE_PEM_PROXY_KEY
               value: /var/certificados/servidor/tls.key
+            # Chave mestra (HMAC) do interceptor de credenciais (DESIGN 6.1):
+            # env PROXY_AUTH_MASTER_KEY → propriedade proxy.auth.master-key.
+            - name: PROXY_AUTH_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ${AUTH_SECRET}
+                  key: master-key
           ports:
             - name: https
               containerPort: 8443
