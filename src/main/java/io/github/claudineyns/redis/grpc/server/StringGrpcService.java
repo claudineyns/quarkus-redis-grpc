@@ -8,6 +8,7 @@ import com.google.protobuf.ByteString;
 import io.github.claudineyns.redis.grpc.v1.CounterValue;
 import io.github.claudineyns.redis.grpc.v1.DecrByRequest;
 import io.github.claudineyns.redis.grpc.v1.DecrRequest;
+import io.github.claudineyns.redis.grpc.v1.GetDelRequest;
 import io.github.claudineyns.redis.grpc.v1.GetExRequest;
 import io.github.claudineyns.redis.grpc.v1.GetRequest;
 import io.github.claudineyns.redis.grpc.v1.GetResponse;
@@ -44,6 +45,7 @@ public class StringGrpcService implements StringService {
 
     private static final String CMD_GET = "GET";
     private static final String CMD_GETEX = "GETEX";
+    private static final String CMD_GETDEL = "GETDEL";
     private static final String CMD_SET = "SET";
     private static final String CMD_MSET = "MSET";
     private static final String CMD_MGET = "MGET";
@@ -138,6 +140,27 @@ public class StringGrpcService implements StringService {
             case EXPIRATION_NOT_SET -> { /* sem alteração de TTL (= GET) */ }
         }
         return command;
+    }
+
+    @Override
+    public Uni<GetResponse> getDel(final GetDelRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_GETDEL);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("GETDEL recebido");
+
+        final Request command = Request.cmd(Command.GETDEL).arg(request.getKey());
+        final long startNanos = System.nanoTime();
+
+        // Devolve o valor (ou nil) e apaga a chave → mesma forma do GET.
+        return redis.send(command)
+                .map(response -> {
+                    MDC.put(LogFields.REDIS_DURATION_MS,
+                            Long.toString((System.nanoTime() - startNanos) / 1_000_000L));
+                    final GetResponse result = toGetResponse(response);
+                    LOG.debugf("GETDEL concluído (found=%s)", result.hasValue());
+                    return result;
+                })
+                .onFailure().transform(RedisErrors::toStatus);
     }
 
     @Override

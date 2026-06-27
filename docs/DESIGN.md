@@ -164,7 +164,7 @@ compile, run, and operate **in isolation**.
   without breaking. File structure:
   ```
   src/main/proto/
-    string/v1/string.proto   # StringService  (GET, GETEX, SET, MSET, MGET, INCR, INCRBY, DECR, DECRBY so far)
+    string/v1/string.proto   # StringService  (GET, GETEX, GETDEL, SET, MSET, MGET, INCR, INCRBY, DECR, DECRBY so far)
     hash/v1/hash.proto       # HashService
     set/v1/set.proto         # SetService
     key/v1/key.proto         # KeyService

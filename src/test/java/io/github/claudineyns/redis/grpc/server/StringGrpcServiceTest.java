@@ -13,6 +13,7 @@ import com.google.protobuf.ByteString;
 import io.github.claudineyns.redis.grpc.v1.CounterValue;
 import io.github.claudineyns.redis.grpc.v1.DecrByRequest;
 import io.github.claudineyns.redis.grpc.v1.DecrRequest;
+import io.github.claudineyns.redis.grpc.v1.GetDelRequest;
 import io.github.claudineyns.redis.grpc.v1.GetExRequest;
 import io.github.claudineyns.redis.grpc.v1.GetRequest;
 import io.github.claudineyns.redis.grpc.v1.GetResponse;
@@ -401,6 +402,39 @@ class StringGrpcServiceTest {
 
         final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
                 client.getEx(GetExRequest.newBuilder().setKey(key).build()).await().indefinitely());
+        assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
+    }
+
+    // ---------- GETDEL ----------
+
+    @Test
+    void getDelReturnsValueAndDeletes() {
+        final String key = "test:getdel:present";
+        seed(key, "v");
+
+        final GetResponse response = client.getDel(
+                GetDelRequest.newBuilder().setKey(key).build()).await().indefinitely();
+
+        assertTrue(response.hasValue());
+        assertEquals("v", response.getValue().toStringUtf8());
+        assertNull(getValue(key)); // a chave foi apagada
+    }
+
+    @Test
+    void getDelOnAbsentReturnsNoValue() {
+        final GetResponse response = client.getDel(
+                GetDelRequest.newBuilder().setKey("test:getdel:absent").build())
+                .await().indefinitely();
+        assertFalse(response.hasValue());
+    }
+
+    @Test
+    void getDelOnWrongTypeFails() {
+        final String key = "test:getdel:hash";
+        redis.send(Request.cmd(Command.HSET).arg(key).arg("f").arg("v")).await().indefinitely();
+
+        final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
+                client.getDel(GetDelRequest.newBuilder().setKey(key).build()).await().indefinitely());
         assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
     }
 
