@@ -12,6 +12,10 @@ import com.google.protobuf.ByteString;
 
 import io.github.claudineyns.redis.grpc.v1.GetRequest;
 import io.github.claudineyns.redis.grpc.v1.GetResponse;
+import io.github.claudineyns.redis.grpc.v1.KeyValue;
+import io.github.claudineyns.redis.grpc.v1.MGetRequest;
+import io.github.claudineyns.redis.grpc.v1.MGetResponse;
+import io.github.claudineyns.redis.grpc.v1.MSetRequest;
 import io.github.claudineyns.redis.grpc.v1.SetCondition;
 import io.github.claudineyns.redis.grpc.v1.SetRequest;
 import io.github.claudineyns.redis.grpc.v1.SetResponse;
@@ -174,7 +178,83 @@ class StringGrpcServiceTest {
         assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
     }
 
+    // ---------- MSET / MGET ----------
+
+    @Test
+    void mSetAndMGetRoundTrip() {
+        client.mSet(MSetRequest.newBuilder()
+                .addEntries(kv("test:m:a", "1"))
+                .addEntries(kv("test:m:b", "2"))
+                .addEntries(kv("test:m:c", "3"))
+                .build()).await().indefinitely();
+
+        final MGetResponse response = client.mGet(MGetRequest.newBuilder()
+                .addKeys("test:m:a").addKeys("test:m:b").addKeys("test:m:c").build())
+                .await().indefinitely();
+
+        assertEquals(3, response.getValuesCount());
+        assertEquals("1", response.getValues(0).getValue().toStringUtf8());
+        assertEquals("2", response.getValues(1).getValue().toStringUtf8());
+        assertEquals("3", response.getValues(2).getValue().toStringUtf8());
+    }
+
+    @Test
+    void mGetReturnsNilForMissing() {
+        seed("test:m:present", "v");
+
+        final MGetResponse response = client.mGet(MGetRequest.newBuilder()
+                .addKeys("test:m:present").addKeys("test:m:missing").build())
+                .await().indefinitely();
+
+        assertTrue(response.getValues(0).hasValue());
+        assertEquals("v", response.getValues(0).getValue().toStringUtf8());
+        assertFalse(response.getValues(1).hasValue()); // nil
+    }
+
+    @Test
+    void mGetPreservesOrder() {
+        seed("test:m:o1", "first");
+        seed("test:m:o2", "second");
+
+        final MGetResponse response = client.mGet(MGetRequest.newBuilder()
+                .addKeys("test:m:o2").addKeys("test:m:o1").build())
+                .await().indefinitely();
+
+        assertEquals("second", response.getValues(0).getValue().toStringUtf8());
+        assertEquals("first", response.getValues(1).getValue().toStringUtf8());
+    }
+
+    @Test
+    void mGetWrongTypeReturnsNil() {
+        final String key = "test:m:hash";
+        redis.send(Request.cmd(Command.HSET).arg(key).arg("f").arg("v")).await().indefinitely();
+
+        final MGetResponse response = client.mGet(MGetRequest.newBuilder()
+                .addKeys(key).build()).await().indefinitely();
+
+        assertEquals(1, response.getValuesCount());
+        assertFalse(response.getValues(0).hasValue()); // nil, NÃO erro
+    }
+
+    @Test
+    void mSetEmptyRejected() {
+        final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
+                client.mSet(MSetRequest.newBuilder().build()).await().indefinitely());
+        assertEquals(Status.Code.INVALID_ARGUMENT, failure.getStatus().getCode());
+    }
+
+    @Test
+    void mGetEmptyRejected() {
+        final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
+                client.mGet(MGetRequest.newBuilder().build()).await().indefinitely());
+        assertEquals(Status.Code.INVALID_ARGUMENT, failure.getStatus().getCode());
+    }
+
     // ---------- helpers ----------
+
+    private static KeyValue kv(final String key, final String value) {
+        return KeyValue.newBuilder().setKey(key).setValue(ByteString.copyFromUtf8(value)).build();
+    }
 
     private SetResponse doSet(final SetRequest.Builder builder) {
         return client.set(builder.build()).await().indefinitely();

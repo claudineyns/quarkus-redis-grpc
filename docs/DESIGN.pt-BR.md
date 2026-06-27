@@ -165,7 +165,7 @@ compilar, rodar e operar **isoladamente**.
   `v1` sem quebra. Estrutura de arquivos:
   ```
   src/main/proto/
-    string/v1/string.proto   # StringService  (GET, SET até agora)
+    string/v1/string.proto   # StringService  (GET, SET, MSET, MGET até agora)
     hash/v1/hash.proto       # HashService
     set/v1/set.proto         # SetService
     key/v1/key.proto         # KeyService

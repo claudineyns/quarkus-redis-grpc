@@ -8,10 +8,12 @@ option java_multiple_files = true;
 // do arquivo (string.proto), ofuscando java.lang.String no código gerado.
 option java_outer_classname = "StringProto";
 
-// Família KEY/VALUE — fatia inicial: GET e SET.
+// Família KEY/VALUE. Implementados: GET, SET, MSET, MGET.
 service StringService {
   rpc Get(GetRequest) returns (GetResponse);
   rpc Set(SetRequest) returns (SetResponse);
+  rpc MSet(MSetRequest) returns (MSetResponse);
+  rpc MGet(MGetRequest) returns (MGetResponse);
 }
 
 // ---- GET ----
@@ -50,4 +52,30 @@ enum SetCondition {
 message SetResponse {
   bool applied = 1;                    // false quando NX/XX barra a gravação
   optional bytes previous = 2;         // só quando 'get' pedido; ausente = nil
+}
+
+// ---- MSET ----
+message KeyValue {                     // par chave/valor do MSET
+  string key   = 1;
+  bytes  value = 2;
+}
+
+message MSetRequest {
+  repeated KeyValue entries = 1;
+}
+
+message MSetResponse {                 // MSET sempre OK → resposta vazia
+}
+
+// ---- MGET ----
+message MGetRequest {
+  repeated string keys = 1;
+}
+
+message MGetResponse {
+  repeated MGetValue values = 1;       // mesma ordem das keys do request
+}
+
+message MGetValue {
+  optional bytes value = 1;            // ausente = nil (inexistente ou não-string)
 }

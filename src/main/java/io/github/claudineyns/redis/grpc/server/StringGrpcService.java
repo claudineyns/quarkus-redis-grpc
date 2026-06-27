@@ -7,10 +7,17 @@ import com.google.protobuf.ByteString;
 
 import io.github.claudineyns.redis.grpc.v1.GetRequest;
 import io.github.claudineyns.redis.grpc.v1.GetResponse;
+import io.github.claudineyns.redis.grpc.v1.KeyValue;
+import io.github.claudineyns.redis.grpc.v1.MGetRequest;
+import io.github.claudineyns.redis.grpc.v1.MGetResponse;
+import io.github.claudineyns.redis.grpc.v1.MGetValue;
+import io.github.claudineyns.redis.grpc.v1.MSetRequest;
+import io.github.claudineyns.redis.grpc.v1.MSetResponse;
 import io.github.claudineyns.redis.grpc.v1.SetCondition;
 import io.github.claudineyns.redis.grpc.v1.SetRequest;
 import io.github.claudineyns.redis.grpc.v1.SetResponse;
 import io.github.claudineyns.redis.grpc.v1.StringService;
+import io.grpc.Status;
 import io.quarkus.grpc.GrpcService;
 import io.smallrye.mutiny.Uni;
 import io.vertx.mutiny.redis.client.Redis;
@@ -31,6 +38,8 @@ public class StringGrpcService implements StringService {
 
     private static final String CMD_GET = "GET";
     private static final String CMD_SET = "SET";
+    private static final String CMD_MSET = "MSET";
+    private static final String CMD_MGET = "MGET";
 
     // Tokens de opção do comando SET (constantes — premissa S1192).
     private static final String OPT_EX = "EX";
@@ -160,6 +169,83 @@ public class StringGrpcService implements StringService {
         } else {
             // Sem GET, nil só acontece quando NX/XX impede a gravação.
             builder.setApplied(response != null);
+        }
+        return builder.build();
+    }
+
+    @Override
+    public Uni<MSetResponse> mSet(final MSetRequest request) {
+        final int pairs = request.getEntriesCount();
+        MDC.put(LogFields.COMMAND, CMD_MSET);
+        LOG.debugf("MSET recebido (pares=%d)", pairs);
+
+        // Validação de entrada: MSET sem pares seria "ERR wrong number of args"
+        // no Redis (mapeado a INTERNAL); rejeitamos como INVALID_ARGUMENT.
+        if (pairs == 0) {
+            return Uni.createFrom().failure(Status.INVALID_ARGUMENT
+                    .withDescription("MSET exige ao menos um par chave/valor").asRuntimeException());
+        }
+
+        final Request command = Request.cmd(Command.MSET);
+        for (final KeyValue entry : request.getEntriesList()) {
+            command.arg(entry.getKey()).arg(entry.getValue().toByteArray());
+        }
+        final long startNanos = System.nanoTime();
+
+        return redis.send(command)
+                .map(response -> {
+                    MDC.put(LogFields.REDIS_DURATION_MS,
+                            Long.toString((System.nanoTime() - startNanos) / 1_000_000L));
+                    LOG.debug("MSET concluído");
+                    return MSetResponse.newBuilder().build(); // MSET sempre OK
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<MGetResponse> mGet(final MGetRequest request) {
+        final int keys = request.getKeysCount();
+        MDC.put(LogFields.COMMAND, CMD_MGET);
+        LOG.debugf("MGET recebido (keys=%d)", keys);
+
+        if (keys == 0) {
+            return Uni.createFrom().failure(Status.INVALID_ARGUMENT
+                    .withDescription("MGET exige ao menos uma chave").asRuntimeException());
+        }
+
+        final Request command = Request.cmd(Command.MGET);
+        for (final String key : request.getKeysList()) {
+            command.arg(key);
+        }
+        final long startNanos = System.nanoTime();
+
+        return redis.send(command)
+                .map(response -> {
+                    MDC.put(LogFields.REDIS_DURATION_MS,
+                            Long.toString((System.nanoTime() - startNanos) / 1_000_000L));
+                    final MGetResponse result = toMGetResponse(response);
+                    LOG.debugf("MGET concluído (valores=%d)", result.getValuesCount());
+                    return result;
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    /**
+     * Traduz a resposta (array) do MGET. Cada elemento corresponde, na ordem, a
+     * uma chave do request; um elemento nulo é o nil do Redis (chave inexistente
+     * ou de outro tipo — MGET não devolve WRONGTYPE).
+     */
+    private static MGetResponse toMGetResponse(final Response response) {
+        final MGetResponse.Builder builder = MGetResponse.newBuilder();
+        if (response != null) {
+            for (int i = 0; i < response.size(); i++) {
+                final Response item = response.get(i); // null = nil
+                final MGetValue.Builder value = MGetValue.newBuilder();
+                if (item != null) {
+                    value.setValue(ByteString.copyFrom(item.toBytes()));
+                }
+                builder.addValues(value.build());
+            }
         }
         return builder.build();
     }
