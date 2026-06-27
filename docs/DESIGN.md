@@ -173,6 +173,11 @@ compile, run, and operate **in isolation**.
 - **Batch extensibility:** the protos MUST be designed to later accommodate a
   unary `Pipeline` RPC (`repeated` request → `repeated` result with per-item
   status) without breaking. See section 5.2.
+- **`SET` response semantics:** `applied` reports whether the write happened
+  (false when `NX`/`XX` blocks it). With `GET`, `previous` carries the old value
+  (absent = key did not exist) and `applied` is deduced from the condition
+  (unconditional → true; `NX` → applied iff the key was absent; `XX` → applied
+  iff the key existed), since Redis does not state it explicitly under `GET`.
 
 ### Command surface (CLOSED — initial v1 scope)
 

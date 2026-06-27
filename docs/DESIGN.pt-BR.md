@@ -174,6 +174,12 @@ compilar, rodar e operar **isoladamente**.
 - **Extensibilidade para batch:** os protos DEVEM ser desenhados para acomodar
   futuramente um RPC unário `Pipeline` (`repeated` request → `repeated` result
   com status por item) sem quebra. Ver seção 5.2.
+- **Semântica da resposta do `SET`:** `applied` informa se a gravação ocorreu
+  (false quando `NX`/`XX` barra). Com `GET`, `previous` carrega o valor antigo
+  (ausente = a chave não existia) e `applied` é deduzido da condição
+  (incondicional → true; `NX` → aplicou sse a chave estava ausente; `XX` →
+  aplicou sse a chave existia), pois o Redis não informa isso explicitamente sob
+  `GET`.
 
 ### Superfície de comandos (FECHADA — escopo inicial v1)
 
