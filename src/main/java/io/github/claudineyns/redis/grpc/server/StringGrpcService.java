@@ -5,8 +5,11 @@ import org.jboss.logging.MDC;
 
 import com.google.protobuf.ByteString;
 
+import io.github.claudineyns.redis.grpc.v1.CounterValue;
 import io.github.claudineyns.redis.grpc.v1.GetRequest;
 import io.github.claudineyns.redis.grpc.v1.GetResponse;
+import io.github.claudineyns.redis.grpc.v1.IncrByRequest;
+import io.github.claudineyns.redis.grpc.v1.IncrRequest;
 import io.github.claudineyns.redis.grpc.v1.KeyValue;
 import io.github.claudineyns.redis.grpc.v1.MGetRequest;
 import io.github.claudineyns.redis.grpc.v1.MGetResponse;
@@ -40,6 +43,8 @@ public class StringGrpcService implements StringService {
     private static final String CMD_SET = "SET";
     private static final String CMD_MSET = "MSET";
     private static final String CMD_MGET = "MGET";
+    private static final String CMD_INCR = "INCR";
+    private static final String CMD_INCRBY = "INCRBY";
 
     // Tokens de opção do comando SET (constantes — premissa S1192).
     private static final String OPT_EX = "EX";
@@ -225,6 +230,46 @@ public class StringGrpcService implements StringService {
                             Long.toString((System.nanoTime() - startNanos) / 1_000_000L));
                     final MGetResponse result = toMGetResponse(response);
                     LOG.debugf("MGET concluído (valores=%d)", result.getValuesCount());
+                    return result;
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<CounterValue> incr(final IncrRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_INCR);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("INCR recebido");
+
+        final Request command = Request.cmd(Command.INCR).arg(request.getKey());
+        return sendCounter(command, CMD_INCR);
+    }
+
+    @Override
+    public Uni<CounterValue> incrBy(final IncrByRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_INCRBY);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debugf("INCRBY recebido (increment=%d)", request.getIncrement());
+
+        final Request command = Request.cmd(Command.INCRBY)
+                .arg(request.getKey()).arg(request.getIncrement());
+        return sendCounter(command, CMD_INCRBY);
+    }
+
+    /**
+     * Executa um comando de contador (INCR/INCRBY) e traduz a resposta inteira em
+     * CounterValue. Em sucesso o Redis sempre devolve um inteiro (nunca nil);
+     * valor não-inteiro/estouro chegam como falha e viram status gRPC.
+     */
+    private Uni<CounterValue> sendCounter(final Request command, final String label) {
+        final long startNanos = System.nanoTime();
+        return redis.send(command)
+                .map(response -> {
+                    MDC.put(LogFields.REDIS_DURATION_MS,
+                            Long.toString((System.nanoTime() - startNanos) / 1_000_000L));
+                    final CounterValue result = CounterValue.newBuilder()
+                            .setValue(response.toLong()).build();
+                    LOG.debugf("%s concluído (value=%d)", label, result.getValue());
                     return result;
                 })
                 .onFailure().transform(RedisErrors::toStatus);

@@ -8,12 +8,14 @@ option java_multiple_files = true;
 // do arquivo (string.proto), ofuscando java.lang.String no código gerado.
 option java_outer_classname = "StringProto";
 
-// Família KEY/VALUE. Implementados: GET, SET, MSET, MGET.
+// Família KEY/VALUE. Implementados: GET, SET, MSET, MGET, INCR, INCRBY.
 service StringService {
   rpc Get(GetRequest) returns (GetResponse);
   rpc Set(SetRequest) returns (SetResponse);
   rpc MSet(MSetRequest) returns (MSetResponse);
   rpc MGet(MGetRequest) returns (MGetResponse);
+  rpc Incr(IncrRequest) returns (CounterValue);
+  rpc IncrBy(IncrByRequest) returns (CounterValue);
 }
 
 // ---- GET ----
@@ -78,4 +80,18 @@ message MGetResponse {
 
 message MGetValue {
   optional bytes value = 1;            // ausente = nil (inexistente ou não-string)
+}
+
+// ---- Contadores (INCR/INCRBY; e futuramente DECR/DECRBY) ----
+message IncrRequest {
+  string key = 1;
+}
+
+message IncrByRequest {
+  string key = 1;
+  int64  increment = 2;
+}
+
+message CounterValue {                 // novo valor após a operação
+  int64 value = 1;
 }

@@ -10,8 +10,11 @@ import org.junit.jupiter.api.Test;
 
 import com.google.protobuf.ByteString;
 
+import io.github.claudineyns.redis.grpc.v1.CounterValue;
 import io.github.claudineyns.redis.grpc.v1.GetRequest;
 import io.github.claudineyns.redis.grpc.v1.GetResponse;
+import io.github.claudineyns.redis.grpc.v1.IncrByRequest;
+import io.github.claudineyns.redis.grpc.v1.IncrRequest;
 import io.github.claudineyns.redis.grpc.v1.KeyValue;
 import io.github.claudineyns.redis.grpc.v1.MGetRequest;
 import io.github.claudineyns.redis.grpc.v1.MGetResponse;
@@ -248,6 +251,55 @@ class StringGrpcServiceTest {
         final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
                 client.mGet(MGetRequest.newBuilder().build()).await().indefinitely());
         assertEquals(Status.Code.INVALID_ARGUMENT, failure.getStatus().getCode());
+    }
+
+    // ---------- INCR / INCRBY ----------
+
+    @Test
+    void incrOnAbsentReturnsOne() {
+        final CounterValue response = client.incr(
+                IncrRequest.newBuilder().setKey("test:c:new").build()).await().indefinitely();
+        assertEquals(1L, response.getValue());
+    }
+
+    @Test
+    void incrIncrementsExisting() {
+        seed("test:c:five", "5");
+        final CounterValue response = client.incr(
+                IncrRequest.newBuilder().setKey("test:c:five").build()).await().indefinitely();
+        assertEquals(6L, response.getValue());
+    }
+
+    @Test
+    void incrByPositive() {
+        seed("test:c:by", "10");
+        final CounterValue response = client.incrBy(IncrByRequest.newBuilder()
+                .setKey("test:c:by").setIncrement(5).build()).await().indefinitely();
+        assertEquals(15L, response.getValue());
+    }
+
+    @Test
+    void incrByNegative() {
+        seed("test:c:byn", "10");
+        final CounterValue response = client.incrBy(IncrByRequest.newBuilder()
+                .setKey("test:c:byn").setIncrement(-3).build()).await().indefinitely();
+        assertEquals(7L, response.getValue());
+    }
+
+    @Test
+    void incrByOnAbsentStartsFromZero() {
+        final CounterValue response = client.incrBy(IncrByRequest.newBuilder()
+                .setKey("test:c:byabsent").setIncrement(7).build()).await().indefinitely();
+        assertEquals(7L, response.getValue());
+    }
+
+    @Test
+    void incrOnNonIntegerFails() {
+        seed("test:c:text", "abc");
+        final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
+                client.incr(IncrRequest.newBuilder().setKey("test:c:text").build())
+                        .await().indefinitely());
+        assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
     }
 
     // ---------- helpers ----------

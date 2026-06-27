@@ -24,23 +24,39 @@ public final class RedisErrors {
     private static final String ERR_NOAUTH = "NOAUTH";
     private static final String ERR_WRONGPASS = "WRONGPASS";
 
+    // Trechos de mensagem para mapeamento semântico (ex.: contadores).
+    private static final String MSG_NOT_INTEGER = "not an integer";
+    private static final String MSG_OVERFLOW = "overflow";
+
     private RedisErrors() {
     }
 
     public static StatusRuntimeException toStatus(final Throwable failure) {
         final String message = failure.getMessage() == null ? EMPTY : failure.getMessage();
-        final String prefix = redisErrorPrefix(message);
+        final Status status = mapStatus(message);
 
-        final Status status = switch (prefix) {
+        LOG.debugf("erro do Redis mapeado -> status %s", status.getCode().name());
+        return status.withDescription(message).withCause(failure).asRuntimeException();
+    }
+
+    /**
+     * Mapeia a mensagem de falha para um status gRPC: primeiro casos semânticos
+     * por conteúdo (ex.: contadores), depois o código RESP (prefixo).
+     */
+    private static Status mapStatus(final String message) {
+        if (message.contains(MSG_NOT_INTEGER)) {
+            return Status.FAILED_PRECONDITION; // valor armazenado não é inteiro
+        }
+        if (message.contains(MSG_OVERFLOW)) {
+            return Status.OUT_OF_RANGE;        // estouro de INCR/DECR
+        }
+        return switch (redisErrorPrefix(message)) {
             case ERR_WRONGTYPE -> Status.FAILED_PRECONDITION;
             case ERR_OOM -> Status.RESOURCE_EXHAUSTED;
             case ERR_NOAUTH, ERR_WRONGPASS -> Status.INTERNAL;
-            case EMPTY -> Status.UNAVAILABLE; // sem prefixo RESP → falha de infra/transporte
-            default -> Status.INTERNAL;       // demais erros RESP (ex.: "ERR ...")
+            case EMPTY -> Status.UNAVAILABLE;  // sem prefixo RESP → infra/transporte
+            default -> Status.INTERNAL;        // demais erros RESP (ex.: "ERR ...")
         };
-
-        LOG.debugf("erro do Redis mapeado: prefixo='%s' -> status %s", prefix, status.getCode().name());
-        return status.withDescription(message).withCause(failure).asRuntimeException();
     }
 
     /**
