@@ -5,6 +5,7 @@ import org.jboss.logging.MDC;
 
 import com.google.protobuf.ByteString;
 
+import io.github.claudineyns.redis.grpc.v1.AppendRequest;
 import io.github.claudineyns.redis.grpc.v1.CounterValue;
 import io.github.claudineyns.redis.grpc.v1.DecrByRequest;
 import io.github.claudineyns.redis.grpc.v1.DecrRequest;
@@ -15,6 +16,7 @@ import io.github.claudineyns.redis.grpc.v1.GetResponse;
 import io.github.claudineyns.redis.grpc.v1.IncrByRequest;
 import io.github.claudineyns.redis.grpc.v1.IncrRequest;
 import io.github.claudineyns.redis.grpc.v1.KeyValue;
+import io.github.claudineyns.redis.grpc.v1.LengthValue;
 import io.github.claudineyns.redis.grpc.v1.MGetRequest;
 import io.github.claudineyns.redis.grpc.v1.MGetResponse;
 import io.github.claudineyns.redis.grpc.v1.MGetValue;
@@ -22,6 +24,7 @@ import io.github.claudineyns.redis.grpc.v1.MSetRequest;
 import io.github.claudineyns.redis.grpc.v1.MSetResponse;
 import io.github.claudineyns.redis.grpc.v1.SetCondition;
 import io.github.claudineyns.redis.grpc.v1.SetRequest;
+import io.github.claudineyns.redis.grpc.v1.StrlenRequest;
 import io.github.claudineyns.redis.grpc.v1.SetResponse;
 import io.github.claudineyns.redis.grpc.v1.StringService;
 import io.grpc.Status;
@@ -53,6 +56,8 @@ public class StringGrpcService implements StringService {
     private static final String CMD_INCRBY = "INCRBY";
     private static final String CMD_DECR = "DECR";
     private static final String CMD_DECRBY = "DECRBY";
+    private static final String CMD_APPEND = "APPEND";
+    private static final String CMD_STRLEN = "STRLEN";
 
     // Tokens de opção do comando SET (constantes — premissa S1192).
     private static final String OPT_EX = "EX";
@@ -365,6 +370,45 @@ public class StringGrpcService implements StringService {
                     final CounterValue result = CounterValue.newBuilder()
                             .setValue(response.toLong()).build();
                     LOG.debugf("%s concluído (value=%d)", label, result.getValue());
+                    return result;
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<LengthValue> append(final AppendRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_APPEND);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("APPEND recebido");
+
+        final Request command = Request.cmd(Command.APPEND)
+                .arg(request.getKey()).arg(request.getValue().toByteArray());
+        return sendLength(command, CMD_APPEND);
+    }
+
+    @Override
+    public Uni<LengthValue> strlen(final StrlenRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_STRLEN);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("STRLEN recebido");
+
+        final Request command = Request.cmd(Command.STRLEN).arg(request.getKey());
+        return sendLength(command, CMD_STRLEN);
+    }
+
+    /**
+     * Executa um comando que devolve um comprimento (APPEND/STRLEN) e traduz a
+     * resposta inteira em LengthValue. STRLEN de chave ausente devolve 0.
+     */
+    private Uni<LengthValue> sendLength(final Request command, final String label) {
+        final long startNanos = System.nanoTime();
+        return redis.send(command)
+                .map(response -> {
+                    MDC.put(LogFields.REDIS_DURATION_MS,
+                            Long.toString((System.nanoTime() - startNanos) / 1_000_000L));
+                    final LengthValue result = LengthValue.newBuilder()
+                            .setLength(response.toLong()).build();
+                    LOG.debugf("%s concluído (length=%d)", label, result.getLength());
                     return result;
                 })
                 .onFailure().transform(RedisErrors::toStatus);

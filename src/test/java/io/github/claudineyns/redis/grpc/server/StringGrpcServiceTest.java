@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import com.google.protobuf.ByteString;
 
+import io.github.claudineyns.redis.grpc.v1.AppendRequest;
 import io.github.claudineyns.redis.grpc.v1.CounterValue;
 import io.github.claudineyns.redis.grpc.v1.DecrByRequest;
 import io.github.claudineyns.redis.grpc.v1.DecrRequest;
@@ -20,10 +21,12 @@ import io.github.claudineyns.redis.grpc.v1.GetResponse;
 import io.github.claudineyns.redis.grpc.v1.IncrByRequest;
 import io.github.claudineyns.redis.grpc.v1.IncrRequest;
 import io.github.claudineyns.redis.grpc.v1.KeyValue;
+import io.github.claudineyns.redis.grpc.v1.LengthValue;
 import io.github.claudineyns.redis.grpc.v1.MGetRequest;
 import io.github.claudineyns.redis.grpc.v1.MGetResponse;
 import io.github.claudineyns.redis.grpc.v1.MSetRequest;
 import io.github.claudineyns.redis.grpc.v1.SetCondition;
+import io.github.claudineyns.redis.grpc.v1.StrlenRequest;
 import io.github.claudineyns.redis.grpc.v1.SetRequest;
 import io.github.claudineyns.redis.grpc.v1.SetResponse;
 import io.github.claudineyns.redis.grpc.v1.StringService;
@@ -435,6 +438,69 @@ class StringGrpcServiceTest {
 
         final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
                 client.getDel(GetDelRequest.newBuilder().setKey(key).build()).await().indefinitely());
+        assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
+    }
+
+    // ---------- APPEND / STRLEN ----------
+
+    @Test
+    void appendCreatesWhenAbsent() {
+        final String key = "test:append:new";
+        final LengthValue response = client.append(AppendRequest.newBuilder()
+                .setKey(key).setValue(ByteString.copyFromUtf8("Hello")).build())
+                .await().indefinitely();
+
+        assertEquals(5L, response.getLength());
+        assertEquals("Hello", getValue(key));
+    }
+
+    @Test
+    void appendConcatenates() {
+        final String key = "test:append:concat";
+        seed(key, "Hello");
+
+        final LengthValue response = client.append(AppendRequest.newBuilder()
+                .setKey(key).setValue(ByteString.copyFromUtf8(" World")).build())
+                .await().indefinitely();
+
+        assertEquals(11L, response.getLength());
+        assertEquals("Hello World", getValue(key));
+    }
+
+    @Test
+    void appendOnWrongTypeFails() {
+        final String key = "test:append:hash";
+        redis.send(Request.cmd(Command.HSET).arg(key).arg("f").arg("v")).await().indefinitely();
+
+        final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
+                client.append(AppendRequest.newBuilder()
+                        .setKey(key).setValue(ByteString.copyFromUtf8("x")).build())
+                        .await().indefinitely());
+        assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
+    }
+
+    @Test
+    void strlenReturnsLength() {
+        seed("test:strlen:k", "Hello World");
+        final LengthValue response = client.strlen(
+                StrlenRequest.newBuilder().setKey("test:strlen:k").build()).await().indefinitely();
+        assertEquals(11L, response.getLength());
+    }
+
+    @Test
+    void strlenOnAbsentReturnsZero() {
+        final LengthValue response = client.strlen(
+                StrlenRequest.newBuilder().setKey("test:strlen:absent").build()).await().indefinitely();
+        assertEquals(0L, response.getLength());
+    }
+
+    @Test
+    void strlenOnWrongTypeFails() {
+        final String key = "test:strlen:hash";
+        redis.send(Request.cmd(Command.HSET).arg(key).arg("f").arg("v")).await().indefinitely();
+
+        final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
+                client.strlen(StrlenRequest.newBuilder().setKey(key).build()).await().indefinitely());
         assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
     }
 

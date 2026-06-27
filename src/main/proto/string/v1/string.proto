@@ -8,7 +8,8 @@ option java_multiple_files = true;
 // do arquivo (string.proto), ofuscando java.lang.String no código gerado.
 option java_outer_classname = "StringProto";
 
-// Família KEY/VALUE. Implementados: GET, GETEX, GETDEL, SET, MSET, MGET, INCR, INCRBY, DECR, DECRBY.
+// Família KEY/VALUE (StringService) — COMPLETA (escopo v1):
+// GET, GETEX, GETDEL, SET, MSET, MGET, INCR, INCRBY, DECR, DECRBY, APPEND, STRLEN.
 service StringService {
   rpc Get(GetRequest) returns (GetResponse);
   rpc GetEx(GetExRequest) returns (GetResponse);
@@ -20,6 +21,8 @@ service StringService {
   rpc IncrBy(IncrByRequest) returns (CounterValue);
   rpc Decr(DecrRequest) returns (CounterValue);
   rpc DecrBy(DecrByRequest) returns (CounterValue);
+  rpc Append(AppendRequest) returns (LengthValue);
+  rpc Strlen(StrlenRequest) returns (LengthValue);
 }
 
 // ---- GET ----
@@ -124,4 +127,18 @@ message DecrRequest {
 message DecrByRequest {
   string key = 1;
   int64  decrement = 2;
+}
+
+// ---- APPEND / STRLEN (retornam comprimento) ----
+message AppendRequest {
+  string key   = 1;
+  bytes  value = 2;
+}
+
+message StrlenRequest {
+  string key = 1;
+}
+
+message LengthValue {                  // comprimento (em bytes) da string
+  int64 length = 1;
 }
