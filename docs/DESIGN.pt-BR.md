@@ -285,6 +285,12 @@ Regras quando implementado:
   porta 9000) para **health** (probes) e **métricas Prometheus** — internos,
   fora da route de borda.
 - Toda config sensível por secret/env; nada hardcoded.
+- **Tuning de JVM no container (Java 21):** a imagem JVM
+  (`src/main/docker/Dockerfile.jvm`) pré-configura `JAVA_TOOL_OPTIONS`
+  container-aware — percentuais de RAM 25/75 (vs. o default de 25% da JVM),
+  `InitiatingHeapOccupancyPercent=35`, `MaxGCPauseMillis=200` e teto fixo de
+  `MaxMetaspaceSize`/`ReservedCodeCacheSize`. Escala com o memory limit do pod;
+  sobreponível por ambiente via env do container.
 
 ---
 

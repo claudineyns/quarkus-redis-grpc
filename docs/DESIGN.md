@@ -285,6 +285,12 @@ Rules when implemented:
   for **health** (probes) and **Prometheus metrics** — internal, outside the edge
   route.
 - All sensitive config via secret/env; nothing hardcoded.
+- **Container JVM tuning (Java 21):** the JVM image
+  (`src/main/docker/Dockerfile.jvm`) pre-sets container-aware
+  `JAVA_TOOL_OPTIONS` — RAM percentages 25/75 (vs the JVM's 25% default),
+  `InitiatingHeapOccupancyPercent=35`, `MaxGCPauseMillis=200`, and fixed
+  `MaxMetaspaceSize`/`ReservedCodeCacheSize`. Scales with the pod memory limit;
+  overridable per environment via the container env.
 
 ---
 

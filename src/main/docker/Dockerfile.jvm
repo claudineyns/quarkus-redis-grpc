@@ -7,6 +7,23 @@ FROM registry.access.redhat.com/ubi9/openjdk-21-runtime:latest
 
 ENV LANGUAGE='en_US:en'
 
+# Tuning de JVM (Java 21), container-aware — escala com o memory limit do pod.
+# JAVA_TOOL_OPTIONS é lido pela própria JVM (independe do launcher), então vale
+# com o ENTRYPOINT 'java -jar' abaixo. Sobreponível por ambiente no deploy.
+#   MaxRAMPercentage=75.0             : heap até 75% do limit (default da JVM é 25%)
+#   InitialRAMPercentage=25.0         : heap inicial 25% do limit
+#   InitiatingHeapOccupancyPercent=35 : G1 antecipa o GC concorrente (vs 45%),
+#                                       reduzindo variância de latência
+#   MaxGCPauseMillis=200              : alvo de pausa do G1 — prioriza baixa latência
+#   MaxMetaspaceSize / ReservedCodeCacheSize : teto fixo de non-heap (previsível)
+ENV JAVA_TOOL_OPTIONS="\
+ -XX:InitialRAMPercentage=25.0\
+ -XX:MaxRAMPercentage=75.0\
+ -XX:InitiatingHeapOccupancyPercent=35\
+ -XX:MaxGCPauseMillis=200\
+ -XX:MaxMetaspaceSize=160m\
+ -XX:ReservedCodeCacheSize=96m"
+
 # Layout fast-jar do Quarkus, copiado na ordem recomendada para cache de camadas
 # (libs primeiro, que mudam menos; código da app por último).
 COPY --chown=185 quarkus-app/lib/      /deployments/lib/
@@ -15,6 +32,7 @@ COPY --chown=185 quarkus-app/app/      /deployments/app/
 COPY --chown=185 quarkus-app/quarkus/  /deployments/quarkus/
 
 EXPOSE 8080
+EXPOSE 9000
 USER 185
 
 ENTRYPOINT ["java", "-jar", "/deployments/quarkus-run.jar"]
