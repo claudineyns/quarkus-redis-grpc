@@ -165,7 +165,7 @@ compile, run, and operate **in isolation**.
   ```
   src/main/proto/
     string/v1/string.proto   # StringService  (COMPLETE for v1)
-    hash/v1/hash.proto       # HashService
+    hash/v1/hash.proto       # HashService  (v0.4.0: HSET/HGET/HDEL/HEXISTS/HLEN, HMGET/HGETALL/HKEYS/HVALS, HSETNX/HINCRBY/HSCAN)
     set/v1/set.proto         # SetService  (v0.3.0: SADD/SREM/SCARD/SISMEMBER/SMISMEMBER/SMEMBERS, SPOP, SSCAN)
     key/v1/key.proto         # KeyService  (COMPLETE: DEL/UNLINK/EXISTS/TYPE, EXPIRE family, TTL/PTTL, SCAN)
     # common/v1/common.proto — deferred until a shared type is needed
@@ -244,20 +244,31 @@ RESP error → gRPC status mapping:
 The **raw Redis message** always accompanies the status (details/trailers) to
 preserve 1:1 fidelity.
 
-### 5.2 Batch/pipeline (decision)
+### 5.2 Batch & pipeline (decision)
 
-**Out of the initial scope**, but anticipated. Rationale: the expensive RTT is the
-**edge hop** (client↔cluster); a batch RPC would send N commands in 1 edge RTT,
-pipelining against Redis. When it lands, it will be a **unary `Pipeline` RPC**
-(`repeated` request via per-command `oneof` → `repeated` result with **per-item
-status**), NOT bidirectional streaming (reserved for continuous flows).
+**Both deferred** — treated as **two separate fronts**. On resumption,
+**batch (MULTI/EXEC) is prioritized before pipeline.**
 
-Rules when implemented:
-- It is **pipelining, not a transaction** — no atomicity guarantee (`MULTI/EXEC`
-  is not covered). Document this explicitly for the client.
-- **Partial failure:** the remaining commands proceed; each item carries its own
-  status. Today's unary protos must already be designed to fit into that envelope
-  without breaking.
+- **Pipeline (performance, non-atomic).** Reassessed: HTTP/2 already multiplexes,
+  so firing N **concurrent** unary calls already collapses them to ~1 edge RTT.
+  The pipeline's real gain over concurrent unary is therefore **not RTT** but
+  **amortizing per-call overhead** — one auth/**HMAC** instead of N, fewer
+  frames/envelopes/trailers, a single internal `redis.batch` — plus **ordering as
+  one unit** and avoiding the HTTP/2 `MAX_CONCURRENT_STREAMS` fan-out for very
+  large N. Justified for **high-volume bulk workloads**, marginal otherwise.
+  Shape: **unary multi-command** RPC with a **generic envelope**
+  (`Command{ repeated bytes args }`), NOT a per-command `oneof` (which becomes a
+  god-message). Generic ⇒ the **command allowlist is mandatory per item**
+  (preserve the curated surface, §6). **Per-item status** (value or error);
+  partial failure proceeds. Open question: Vert.x `batch()` may fail-fast on the
+  first error → per-item errors likely require a dedicated connection with
+  individual send capture. Bidirectional streaming reserved for continuous flows.
+- **Batch (atomicity).** `MULTI/EXEC` (optionally `WATCH`) — the one capability
+  concurrent unary calls **cannot** emulate. This is the **unique-value** front,
+  hence prioritized.
+
+In both cases, today's unary protos must keep fitting a future envelope without
+breaking.
 
 ---
 
@@ -443,6 +454,10 @@ Refines the caller authentication into a credential pair that the proxy validate
 
 - [x] Final command list per family → Core+Recommended, with *SCAN (section 5).
 - [x] Batch/pipeline RPC → out of the initial scope, anticipated (section 5.2).
+- [x] Batch & pipeline as two separate fronts → **both deferred**; on resumption
+  **batch (MULTI/EXEC) before pipeline**. Pipeline = generic envelope + per-item
+  allowlist, a scale optimization (HTTP/2 already covers edge RTT); batch =
+  unique atomicity value (section 5.2).
 - [x] Token format/source → static token via secret (section 6).
 - [x] Command allowlist → mandatory, it is the surface itself (section 6).
 - [x] `.proto` organization → 1 service per family + `common.proto` (section 5).

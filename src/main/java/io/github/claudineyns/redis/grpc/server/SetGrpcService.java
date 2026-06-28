@@ -177,8 +177,9 @@ public class SetGrpcService implements SetService {
         return redis.send(command)
                 .map(response -> {
                     putRedisDuration(startNanos);
-                    // A forma da resposta difere: com count é um array (0..count);
-                    // sem count é um único bulk (ou nil quando a chave não existe).
+                    // A forma da resposta difere conforme o count. Com count, vem
+                    // um array com zero ou mais membros. Sem count, vem um único
+                    // valor, ou nil quando a chave não existe.
                     final SetMembers.Builder result = SetMembers.newBuilder();
                     if (response != null) {
                         if (hasCount) {
