@@ -8,7 +8,7 @@ option java_multiple_files = true;
 option java_outer_classname = "HashProto";
 
 // Família HASH. Fatia 1: HSET, HGET, HDEL, HEXISTS, HLEN.
-// Fatia 2: HMGET, HGETALL, HKEYS, HVALS.
+// Fatia 2: HMGET, HGETALL, HKEYS, HVALS. Fatia 3: HSETNX, HINCRBY, HSCAN.
 service HashService {
   rpc HSet(HSetRequest)       returns (HashCount);
   rpc HGet(HGetRequest)       returns (HashValue);
@@ -19,6 +19,9 @@ service HashService {
   rpc HGetAll(HGetAllRequest) returns (HashEntries);
   rpc HKeys(HKeysRequest)     returns (HashFields);
   rpc HVals(HValsRequest)     returns (HashValues);
+  rpc HSetNx(HSetNxRequest)   returns (HashChange);
+  rpc HIncrBy(HIncrByRequest) returns (HashCounter);
+  rpc HScan(HScanRequest)     returns (HScanResponse);
 }
 
 // Campo é string (convenção); valor é bytes (binário-seguro, como no String).
@@ -43,3 +46,25 @@ message HMGetResponse { repeated HashValue values = 1; }  // optional por campo,
 message HashEntries   { repeated FieldValue entries = 1; } // pares campo/valor (HGETALL)
 message HashFields    { repeated string fields = 1; }      // HKEYS
 message HashValues    { repeated bytes values = 1; }       // HVALS
+
+message HSetNxRequest  { string key = 1; string field = 2; bytes value = 3; }
+message HIncrByRequest { string key = 1; string field = 2; int64 increment = 3; }
+
+message HashChange  { bool applied = 1; }   // HSETNX: 0/1 do Redis -> bool
+message HashCounter { int64 value = 1; }    // HINCRBY: novo valor
+
+// ---- Fatia 3: iteração incremental ----
+// HSCAN key cursor [MATCH pattern] [COUNT count] (sem NOVALUES — adiado). Cada RPC
+// = um HSCAN; cliente dirige a iteração. Cursor opaco; página pode vir vazia sem
+// ser o fim; COUNT é dica; campos podem repetir entre páginas.
+message HScanRequest {
+  string key = 1;
+  string cursor = 2;          // "0" inicia; repassar o cursor devolvido até voltar "0"
+  optional string match = 3;  // MATCH <glob> — filtra campos
+  optional int64  count = 4;  // COUNT <n>   — dica de trabalho/página
+}
+
+message HScanResponse {
+  string cursor = 1;            // próximo cursor; "0" = fim da iteração
+  repeated FieldValue entries = 2;
+}

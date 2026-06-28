@@ -16,9 +16,15 @@ import io.github.claudineyns.redis.grpc.v1.HKeysRequest;
 import io.github.claudineyns.redis.grpc.v1.HLenRequest;
 import io.github.claudineyns.redis.grpc.v1.HMGetRequest;
 import io.github.claudineyns.redis.grpc.v1.HMGetResponse;
+import io.github.claudineyns.redis.grpc.v1.HScanRequest;
+import io.github.claudineyns.redis.grpc.v1.HScanResponse;
+import io.github.claudineyns.redis.grpc.v1.HSetNxRequest;
 import io.github.claudineyns.redis.grpc.v1.HSetRequest;
+import io.github.claudineyns.redis.grpc.v1.HIncrByRequest;
 import io.github.claudineyns.redis.grpc.v1.HValsRequest;
+import io.github.claudineyns.redis.grpc.v1.HashChange;
 import io.github.claudineyns.redis.grpc.v1.HashCount;
+import io.github.claudineyns.redis.grpc.v1.HashCounter;
 import io.github.claudineyns.redis.grpc.v1.HashEntries;
 import io.github.claudineyns.redis.grpc.v1.HashExists;
 import io.github.claudineyns.redis.grpc.v1.HashFields;
@@ -55,6 +61,13 @@ public class HashGrpcService implements HashService {
     private static final String CMD_HGETALL = "HGETALL";
     private static final String CMD_HKEYS = "HKEYS";
     private static final String CMD_HVALS = "HVALS";
+    private static final String CMD_HSETNX = "HSETNX";
+    private static final String CMD_HINCRBY = "HINCRBY";
+    private static final String CMD_HSCAN = "HSCAN";
+
+    // Opções do HSCAN.
+    private static final String OPT_MATCH = "MATCH";
+    private static final String OPT_COUNT = "COUNT";
 
     @Inject
     Redis redis; // CDI: não pode ser final (exceção da convenção de DESIGN seção 10)
@@ -280,6 +293,86 @@ public class HashGrpcService implements HashService {
                         }
                     }
                     LOG.debugf("HVALS concluído (values=%d)", result.getValuesCount());
+                    return result.build();
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<HashChange> hSetNx(final HSetNxRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_HSETNX);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("HSETNX recebido");
+
+        final Request command = Request.cmd(Command.HSETNX)
+                .arg(request.getKey()).arg(request.getField()).arg(request.getValue().toByteArray());
+        final long startNanos = System.nanoTime();
+
+        return redis.send(command)
+                .map(response -> {
+                    putRedisDuration(startNanos);
+                    // HSETNX: 1 = criou (campo não existia); 0 = já existia (não grava).
+                    final boolean applied = response != null && response.toLong() == 1L;
+                    LOG.debugf("HSETNX concluído (applied=%s)", applied);
+                    return HashChange.newBuilder().setApplied(applied).build();
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<HashCounter> hIncrBy(final HIncrByRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_HINCRBY);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("HINCRBY recebido");
+
+        final Request command = Request.cmd(Command.HINCRBY)
+                .arg(request.getKey()).arg(request.getField()).arg(request.getIncrement());
+        final long startNanos = System.nanoTime();
+
+        return redis.send(command)
+                .map(response -> {
+                    putRedisDuration(startNanos);
+                    // HINCRBY devolve o novo valor do campo (campo ausente conta como 0).
+                    final HashCounter result = HashCounter.newBuilder().setValue(response.toLong()).build();
+                    LOG.debugf("HINCRBY concluído (value=%d)", result.getValue());
+                    return result;
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<HScanResponse> hScan(final HScanRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_HSCAN);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("HSCAN recebido");
+
+        // HSCAN key cursor [MATCH pattern] [COUNT count]. Opções só anexadas quando
+        // informadas (proto3 optional → hasX()).
+        final Request command = Request.cmd(Command.HSCAN).arg(request.getKey()).arg(request.getCursor());
+        if (request.hasMatch()) {
+            command.arg(OPT_MATCH).arg(request.getMatch());
+        }
+        if (request.hasCount()) {
+            command.arg(OPT_COUNT).arg(request.getCount());
+        }
+        final long startNanos = System.nanoTime();
+
+        return redis.send(command)
+                .map(response -> {
+                    putRedisDuration(startNanos);
+                    // HSCAN devolve [cursor, [f1,v1,f2,v2,...]] — o 2º elemento é um
+                    // array PLANO de pares (não é mapa), iterado por índice.
+                    final String cursor = response.get(0).toString();
+                    final HScanResponse.Builder result = HScanResponse.newBuilder().setCursor(cursor);
+                    final Response pairs = response.get(1);
+                    if (pairs != null) {
+                        for (int i = 0; i + 1 < pairs.size(); i += 2) {
+                            result.addEntries(FieldValue.newBuilder()
+                                    .setField(pairs.get(i).toString())
+                                    .setValue(ByteString.copyFrom(pairs.get(i + 1).toBytes())).build());
+                        }
+                    }
+                    LOG.debugf("HSCAN concluído (cursor=%s, entries=%d)", cursor, result.getEntriesCount());
                     return result.build();
                 })
                 .onFailure().transform(RedisErrors::toStatus);

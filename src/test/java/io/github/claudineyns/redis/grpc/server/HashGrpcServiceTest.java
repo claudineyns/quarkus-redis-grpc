@@ -18,7 +18,11 @@ import io.github.claudineyns.redis.grpc.v1.HKeysRequest;
 import io.github.claudineyns.redis.grpc.v1.HLenRequest;
 import io.github.claudineyns.redis.grpc.v1.HMGetRequest;
 import io.github.claudineyns.redis.grpc.v1.HMGetResponse;
+import io.github.claudineyns.redis.grpc.v1.HScanRequest;
+import io.github.claudineyns.redis.grpc.v1.HScanResponse;
+import io.github.claudineyns.redis.grpc.v1.HSetNxRequest;
 import io.github.claudineyns.redis.grpc.v1.HSetRequest;
+import io.github.claudineyns.redis.grpc.v1.HIncrByRequest;
 import io.github.claudineyns.redis.grpc.v1.HValsRequest;
 import io.github.claudineyns.redis.grpc.v1.HashEntries;
 import io.github.claudineyns.redis.grpc.v1.HashService;
@@ -187,6 +191,86 @@ class HashGrpcServiceTest {
                 .await().indefinitely().getValuesList()
                 .forEach(v -> vals.add(v.toStringUtf8()));
         assertEquals(java.util.Set.of("1", "2"), vals);
+    }
+
+    // ---------- condicional/numérico + cursor (Fatia 3) ----------
+
+    @Test
+    void hSetNxAppliesOnlyWhenAbsent() {
+        del("test:hash:setnx");
+        assertTrue(client.hSetNx(HSetNxRequest.newBuilder().setKey("test:hash:setnx")
+                .setField("f").setValue(ByteString.copyFromUtf8("v1")).build())
+                .await().indefinitely().getApplied());
+        // campo já existe → não aplica e não altera
+        assertFalse(client.hSetNx(HSetNxRequest.newBuilder().setKey("test:hash:setnx")
+                .setField("f").setValue(ByteString.copyFromUtf8("v2")).build())
+                .await().indefinitely().getApplied());
+        final HashValue value = client.hGet(HGetRequest.newBuilder()
+                .setKey("test:hash:setnx").setField("f").build()).await().indefinitely();
+        assertEquals("v1", value.getValue().toStringUtf8());
+    }
+
+    @Test
+    void hIncrByIncrements() {
+        del("test:hash:incr");
+        assertEquals(5L, client.hIncrBy(HIncrByRequest.newBuilder().setKey("test:hash:incr")
+                .setField("n").setIncrement(5).build()).await().indefinitely().getValue());
+        assertEquals(7L, client.hIncrBy(HIncrByRequest.newBuilder().setKey("test:hash:incr")
+                .setField("n").setIncrement(2).build()).await().indefinitely().getValue());
+    }
+
+    @Test
+    void hIncrByOnNonIntegerFails() {
+        del("test:hash:incr-bad");
+        client.hSet(HSetRequest.newBuilder().setKey("test:hash:incr-bad")
+                .addFields(fv("n", "abc")).build()).await().indefinitely();
+        final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
+                client.hIncrBy(HIncrByRequest.newBuilder().setKey("test:hash:incr-bad")
+                        .setField("n").setIncrement(1).build()).await().indefinitely());
+        assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
+    }
+
+    @Test
+    void hScanIteratesAllFields() {
+        del("test:hash:scan");
+        final HSetRequest.Builder seed = HSetRequest.newBuilder().setKey("test:hash:scan");
+        for (int i = 0; i < 50; i++) {
+            seed.addFields(fv("f" + i, "v" + i));
+        }
+        client.hSet(seed.build()).await().indefinitely();
+        final java.util.Map<String, String> found = hScanAll("test:hash:scan", null, 10L);
+        assertEquals(50, found.size());
+        assertEquals("v0", found.get("f0"));
+        assertEquals("v49", found.get("f49"));
+    }
+
+    @Test
+    void hScanMatchFilters() {
+        del("test:hash:scanm");
+        client.hSet(HSetRequest.newBuilder().setKey("test:hash:scanm")
+                .addFields(fv("keep:1", "a")).addFields(fv("keep:2", "b")).addFields(fv("drop:1", "c"))
+                .build()).await().indefinitely();
+        final java.util.Map<String, String> found = hScanAll("test:hash:scanm", "keep:*", null);
+        assertEquals(java.util.Set.of("keep:1", "keep:2"), found.keySet());
+    }
+
+    /** Itera o HSCAN do cursor "0" até voltar "0", coletando campos→valores. */
+    private java.util.Map<String, String> hScanAll(final String key, final String match, final Long count) {
+        final java.util.Map<String, String> all = new java.util.HashMap<>();
+        String cursor = "0";
+        do {
+            final HScanRequest.Builder request = HScanRequest.newBuilder().setKey(key).setCursor(cursor);
+            if (match != null) {
+                request.setMatch(match);
+            }
+            if (count != null) {
+                request.setCount(count);
+            }
+            final HScanResponse response = client.hScan(request.build()).await().indefinitely();
+            response.getEntriesList().forEach(e -> all.put(e.getField(), e.getValue().toStringUtf8()));
+            cursor = response.getCursor();
+        } while (!"0".equals(cursor));
+        return all;
     }
 
     // ---------- helpers ----------
