@@ -245,20 +245,31 @@ Mapeamento erro RESP → status gRPC:
 A **mensagem crua do Redis** sempre acompanha o status (details/trailers) para
 preservar fidelidade 1:1.
 
-### 5.2 Batch/pipeline (decisão)
+### 5.2 Batch & pipeline (decisão)
 
-**Fora do escopo inicial**, mas previsto. Justificativa: o RTT caro é o **salto
-de borda** (cliente↔cluster); um RPC de lote enviaria N comandos em 1 RTT de
-borda, com pipelining contra o Redis. Quando entrar, será um **RPC unário
-`Pipeline`** (`repeated` request via `oneof` por comando → `repeated` result com
-**status por item**), NÃO streaming bidirecional (reservado para fluxo contínuo).
+**Ambas adiadas** — tratadas como **duas frentes separadas**. Na retomada,
+**batch (MULTI/EXEC) é priorizado antes do pipeline.**
 
-Regras quando implementado:
-- É **pipelining, não transação** — sem garantia de atomicidade (`MULTI/EXEC`
-  não está coberto). Documentar explicitamente para o cliente.
-- **Falha parcial:** demais comandos prosseguem; cada item carrega seu próprio
-  status. Os protos unários de hoje já devem ser desenhados para encaixar nesse
-  envelope sem quebra.
+- **Pipeline (desempenho, não-atômico).** Reavaliado: o HTTP/2 já multiplexa,
+  então disparar N unárias **concorrentes** já as colapsa em ~1 RTT de borda.
+  Logo, o ganho real do pipeline sobre o concorrente **não é RTT**, e sim
+  **amortizar custo fixo por chamada** — um auth/**HMAC** em vez de N, menos
+  frames/envelopes/trailers, um único `redis.batch` interno — além de **ordem
+  como unidade** e de evitar o `MAX_CONCURRENT_STREAMS` do HTTP/2 em N muito
+  grande. Justifica-se em **cargas em lote de alto volume**, marginal fora disso.
+  Forma: RPC **unária multi-comando** com **envelope genérico**
+  (`Command{ repeated bytes args }`), NÃO um `oneof` por comando (vira
+  mensagem-deus). Genérico ⇒ a **allowlist por item é obrigatória** (preserva a
+  superfície curada, §6). **Status por item** (valor ou erro); falha parcial
+  prossegue. Em aberto: o `batch()` do Vert.x pode falhar-rápido no primeiro erro
+  → status por item provavelmente exige conexão dedicada com captura individual
+  dos sends. Streaming bidirecional reservado para fluxo contínuo.
+- **Batch (atomicidade).** `MULTI/EXEC` (opcional `WATCH`) — a única capacidade
+  que unárias concorrentes **não** emulam. É a frente de **valor único**, por
+  isso priorizada.
+
+Em ambos os casos, os protos unários de hoje devem continuar encaixando num
+envelope futuro sem quebra.
 
 ---
 
@@ -448,6 +459,10 @@ Refina a autenticação do chamador em um par de credenciais que o proxy valida
 
 - [x] Lista final de comandos por família → Núcleo+Recomendado, com *SCAN (seção 5).
 - [x] RPC de batch/pipeline → fora do escopo inicial, previsto (seção 5.2).
+- [x] Batch e pipeline como duas frentes separadas → **ambas adiadas**; na
+  retomada **batch (MULTI/EXEC) antes do pipeline**. Pipeline = envelope genérico
+  + allowlist por item, otimização de escala (HTTP/2 já cobre o RTT de borda);
+  batch = valor único de atomicidade (seção 5.2).
 - [x] Formato/fonte do token → token estático via secret (seção 6).
 - [x] Allowlist de comandos → mandatória, é a própria superfície (seção 6).
 - [x] Organização do `.proto` → 1 service por família + `common.proto` (seção 5).
