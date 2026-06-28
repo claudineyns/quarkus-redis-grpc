@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package io.github.claudineyns.redis.grpc.v1;
+
+option java_package = "io.github.claudineyns.redis.grpc.v1";
+option java_multiple_files = true;
+// Nome explícito da outer class (evita colisão com nomes derivados do arquivo).
+option java_outer_classname = "HashProto";
+
+// Família HASH. Fatia 1: HSET, HGET, HDEL, HEXISTS, HLEN.
+service HashService {
+  rpc HSet(HSetRequest)       returns (HashCount);
+  rpc HGet(HGetRequest)       returns (HashValue);
+  rpc HDel(HDelRequest)       returns (HashCount);
+  rpc HExists(HExistsRequest) returns (HashExists);
+  rpc HLen(HLenRequest)       returns (HashCount);
+}
+
+// Campo é string (convenção); valor é bytes (binário-seguro, como no String).
+message FieldValue { string field = 1; bytes value = 2; }
+
+message HSetRequest    { string key = 1; repeated FieldValue fields = 2; }
+message HGetRequest    { string key = 1; string field = 2; }
+message HDelRequest    { string key = 1; repeated string fields = 2; }
+message HExistsRequest { string key = 1; string field = 2; }
+message HLenRequest    { string key = 1; }
+
+message HashCount  { int64 count = 1; }          // novos / removidos / nº de campos
+message HashValue  { optional bytes value = 1; } // nil quando o campo não existe
+message HashExists { bool exists = 1; }

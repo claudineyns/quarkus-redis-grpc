@@ -21,4 +21,8 @@ mkdir -p generated
   --python_out=generated --grpc_python_out=generated \
   set.proto
 
+"$PY" -m grpc_tools.protoc -I "../../src/main/proto/hash/v1" \
+  --python_out=generated --grpc_python_out=generated \
+  hash.proto
+
 echo "stubs gerados em generated/"
