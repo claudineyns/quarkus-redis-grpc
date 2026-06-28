@@ -168,7 +168,7 @@ compilar, rodar e operar **isoladamente**.
     string/v1/string.proto   # StringService  (COMPLETO para v1)
     hash/v1/hash.proto       # HashService
     set/v1/set.proto         # SetService
-    key/v1/key.proto         # KeyService
+    key/v1/key.proto         # KeyService  (COMPLETO: DEL/UNLINK/EXISTS/TYPE, família EXPIRE, TTL/PTTL, SCAN)
     # common/v1/common.proto — adiado até haver um tipo compartilhado
   ```
 - **Extensibilidade para batch:** os protos DEVEM ser desenhados para acomodar
@@ -263,22 +263,83 @@ Regras quando implementado:
 
 ## 6. Segurança
 
-- **Token estático em metadata gRPC.** API key fixa fornecida via secret/env,
-  validada por um **interceptor gRPC** em toda chamada. Sem token válido →
-  `UNAUTHENTICATED`. Nunca em código ou commit.
+- **Autenticação do chamador via credenciais de acesso em metadata gRPC**
+  (validadas por um interceptor gRPC em toda chamada; credencial ausente/inválida
+  → `UNAUTHENTICATED`). O modelo evolui do token estático único para um **par
+  ACCESS_KEY/SECRET_KEY** — ver 6.1. Nunca em código ou commit.
 - **AUTH no Redis** sempre habilitado (senha via secret).
 - **TLS de borda obrigatório, one-way (sem mTLS).** O pod serve TLS de servidor
-  via `quarkus-tls-registry` (a route é passthrough, então o TLS termina no pod).
-  O cliente valida o servidor; o servidor **não** exige certificado de cliente —
-  a autenticação do chamador é feita pelo **token estático em metadata**.
+  via `quarkus-tls-registry` na porta de borda unificada **8443** (`%prod`:
+  `quarkus.http.tls-configuration-name=https`, `quarkus.http.insecure-requests=disabled`);
+  a route passthrough termina o TLS no pod. Cert/key são entregues por um
+  **Secret montado em `/var/certificados/servidor/`**, com os caminhos injetados
+  por env var (`QUARKUS_TLS_HTTPS_KEY_STORE_PEM_PROXY_CERT`/`_KEY`). O cert folha
+  tem **CN = host da Route** e **SAN = host da Route + `localhost`** (localhost
+  facilita validar via port-forward). O cliente valida o servidor; o servidor
+  **não** exige certificado de cliente — a autenticação do chamador é o par de
+  credenciais (6.1). No CRC/dev o cert é uma **CA local + folha** gerada por
+  `openssl` (ver `infra/ocp/25-tls-secret.sh`); em produção vem da CA corporativa.
+  O management (9000) permanece plaintext/interno.
 - **Sem TLS entre app↔Redis.** A conexão proxy↔Redis é em texto claro dentro do
   cluster; a proteção desse trecho é `AUTH` + isolamento de rede (NetworkPolicy/
   namespace), não TLS.
+- **gRPC Server Reflection: habilitado por padrão (todos os ambientes), atrás de
+  autenticação.** O reflection fica ON por padrão (toggle:
+  `quarkus.grpc.server.enable-reflection-service`, default `true`) para permitir
+  a descoberta de serviços por clientes/ferramentas. A descoberta NÃO é aberta: o
+  interceptor de token opaco DEVE cobrir também o serviço de reflection, de modo
+  que enumerar exija um token válido sobre TLS (sem token → `UNAUTHENTICATED`).
+  Racional: preferir descoberta interoperável a segurança-por-obscuridade; os
+  controles reais (token + TLS + superfície mínima de comandos) protegem tanto as
+  chamadas quanto a descoberta. **[PENDENTE]** o interceptor de token — e a sua
+  cobertura do reflection — está desenhado, ainda não implementado.
 - **Allowlist de comandos (mandatória).** Por design, SOMENTE os comandos das
   famílias KEY/VALUE, HASH, SET e KEY-geral (seção 5) são expostos. Comandos
   destrutivos/admin (`FLUSHALL`, `FLUSHDB`, `CONFIG`, `KEYS`, `SCRIPT`,
   `SHUTDOWN`, `DEBUG`, etc.) NÃO existem na superfície gRPC — a allowlist é a
   própria superfície de RPCs, não uma trava configurável a ser ligada/desligada.
+
+### 6.1 Credenciais de acesso — ACCESS_KEY / SECRET_KEY
+
+**Status:** implementado — `CredentialValidator` + `AuthInterceptor` global
+(cobre o reflection). Nomes dos headers configuráveis
+(`proxy.auth.access-key-header` / `proxy.auth.secret-key-header`, defaults
+`x-grpc-access-key` / `x-grpc-secret-key`). Auth **ativa só quando
+`proxy.auth.master-key` está presente** (dev/test rodam sem ela). **A emissão
+automática via HTTPS continua futura.**
+
+Refina a autenticação do chamador em um par de credenciais que o proxy valida
+**localmente**, sem armazenar nenhum segredo por usuário.
+
+- **Chave mestra (chave do HMAC):** hex de 64 (32 bytes, `SecureRandom`),
+  conhecida só pelos responsáveis; de um **Secret** OCP/CRC via env
+  `PROXY_AUTH_MASTER_KEY` → propriedade `proxy.auth.master-key`. Usada
+  **exclusivamente** como chave do HMAC (sem cifra/decifra). No HMAC, são os
+  **32 bytes crus (hex-decoded)**.
+- **ACCESS_KEY:** hex de 32 (16 bytes, alta entropia/`SecureRandom`), gerado pelos
+  responsáveis. Identificador público da credencial.
+- **SECRET_KEY** = `hex( HMAC-SHA256(key = bytes crus da chave mestra, msg =
+  string ACCESS_KEY) )` (32 bytes → 64 hex). Mão única: verificável, não
+  reversível.
+- **Allowlist:** conjunto de hashes `SHA-256(string ACCESS_KEY)` (hex), de um
+  **ConfigMap** OCP/CRC (hashes são mão única, não são segredo) via env
+  `PROXY_AUTH_ACCESS_KEY_HASHES` (separados por vírgula) → propriedade
+  `proxy.auth.access-key-hashes`. SHA-256 sem salt é aceitável porque o
+  ACCESS_KEY é de alta entropia (128 bits aleatórios), não uma senha. Permite
+  **revogação por credencial** (remover um hash) sem rotacionar a chave mestra.
+- **Regra de validação** (no interceptor de auth, sobre a credencial trafegada na
+  metadata gRPC; este interceptor também cobre o Server Reflection):
+  1. `SHA-256(ACCESS_KEY)` ∈ allowlist — autorização/revogação;
+  2. `SECRET_KEY == hex(HMAC-SHA256(chave_mestra, ACCESS_KEY))`, comparação em
+     **tempo constante** — prova de que o par foi emitido pela app.
+  Ambos ⇒ autenticado; caso contrário `UNAUTHENTICATED`.
+- **Distribuição:** o par ACCESS_KEY/SECRET_KEY é entregue aos usuários finais
+  sobre TLS. Nunca logar chaves/segredos.
+- **Emissão automática via HTTPS — FUTURO:** um endpoint HTTPS que calcula o
+  SECRET_KEY a partir de um ACCESS_KEY usando a chave mestra (para os responsáveis
+  não calcularem à mão) será adicionado depois, quando houver repositório adequado
+  para guardar os access keys dos usuários finais. Até lá, os pares são produzidos
+  manualmente.
 
 ---
 
@@ -290,6 +351,11 @@ Regras quando implementado:
 - **Interface de management separada** (`quarkus.management.enabled=true`,
   porta 9000) para **health** (probes) e **métricas Prometheus** — internos,
   fora da route de borda.
+- **Exposição de borda via Ingress (restrição corporativa).** A route externa é
+  criada a partir de um **Ingress** Kubernetes; o OpenShift **gera a Route
+  passthrough automaticamente** (anotação
+  `route.openshift.io/termination: passthrough`, `pathType: ImplementationSpecific`
+  com path vazio → roteamento por host). A Route nunca é criada diretamente.
 - Toda config sensível por secret/env; nada hardcoded.
 - **Tuning de JVM no container (Java 21):** a imagem JVM
   (`src/main/docker/Dockerfile.jvm`) pré-configura `JAVA_TOOL_OPTIONS`

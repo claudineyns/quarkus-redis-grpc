@@ -33,7 +33,7 @@ else
 fi
 
 echo "iniciando port-forward (localhost:18080 -> svc/${APP_NAME}:8080)..."
-oc --context "$OC_CXT" -n "$PROXY_NAMESPACE" port-forward "svc/${APP_NAME}" 18080:8080 >/dev/null 2>&1 &
+oc --context "$OC_CXT" -n "$PROXY_NAMESPACE" port-forward "svc/${APP_NAME}" 18080:8443 >/dev/null 2>&1 &
 PF_PID=$!
 trap 'kill $PF_PID 2>/dev/null || true' EXIT
 sleep 3

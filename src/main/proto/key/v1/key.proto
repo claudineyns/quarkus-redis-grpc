@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package io.github.claudineyns.redis.grpc.v1;
+
+option java_package = "io.github.claudineyns.redis.grpc.v1";
+option java_multiple_files = true;
+// Nome explícito da outer class (evita colisão com nomes derivados do arquivo).
+option java_outer_classname = "KeyProto";
+
+// Família KEY (cross-type). Fatia 1: DEL, UNLINK, EXISTS, TYPE.
+service KeyService {
+  rpc Del(DelRequest)       returns (KeyCount);
+  rpc Unlink(UnlinkRequest) returns (KeyCount);
+  rpc Exists(ExistsRequest) returns (KeyCount);
+  rpc Type(TypeRequest)     returns (KeyType);
+  rpc Expire(ExpireRequest)       returns (KeyChange);
+  rpc PExpire(PExpireRequest)     returns (KeyChange);
+  rpc ExpireAt(ExpireAtRequest)   returns (KeyChange);
+  rpc PExpireAt(PExpireAtRequest) returns (KeyChange);
+  rpc Persist(PersistRequest)     returns (KeyChange);
+  rpc Ttl(TtlRequest)             returns (TtlValue);
+  rpc PTtl(PTtlRequest)           returns (TtlValue);
+  rpc Scan(ScanRequest)           returns (ScanResponse);
+}
+
+message DelRequest    { repeated string keys = 1; }
+message UnlinkRequest { repeated string keys = 1; }
+message ExistsRequest { repeated string keys = 1; }
+message TypeRequest   { string key = 1; }
+
+message KeyCount {                      // nº de chaves afetadas/existentes
+  int64 count = 1;
+}
+
+message KeyType {                       // nome do tipo; "none" se a chave não existe
+  string type = 1;
+}
+
+// ---- Fatia 2: expiração ----
+// Condição opcional das variantes de EXPIRE (Redis 7+); mutuamente exclusivas.
+enum ExpireCondition {
+  EXPIRE_CONDITION_UNSPECIFIED = 0;    // sem condição
+  EXPIRE_CONDITION_NX = 1;             // só se a chave NÃO tem TTL
+  EXPIRE_CONDITION_XX = 2;             // só se a chave TEM TTL
+  EXPIRE_CONDITION_GT = 3;             // só se o novo TTL for MAIOR que o atual
+  EXPIRE_CONDITION_LT = 4;             // só se o novo TTL for MENOR que o atual
+}
+
+message ExpireRequest    { string key = 1; int64 seconds = 2;      ExpireCondition condition = 3; }
+message PExpireRequest   { string key = 1; int64 millis = 2;       ExpireCondition condition = 3; }
+message ExpireAtRequest  { string key = 1; int64 unix_seconds = 2; ExpireCondition condition = 3; }
+message PExpireAtRequest { string key = 1; int64 unix_millis = 2;  ExpireCondition condition = 3; }
+message PersistRequest   { string key = 1; }
+message TtlRequest       { string key = 1; }
+message PTtlRequest      { string key = 1; }
+
+message KeyChange {                     // 0/1 do Redis traduzido para bool
+  bool applied = 1;
+}
+
+message TtlValue {                      // tempo restante; -1 sem TTL, -2 inexistente
+  int64 value = 1;
+}
+
+// ---- Fatia 3: iteração incremental ----
+// SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]. Cada RPC = um SCAN; o
+// cliente dirige a iteração. Garantias do Redis: cursor opaco; a página pode vir
+// VAZIA sem ser o fim; COUNT é DICA (não limite); SEM ordem; chaves podem
+// REPETIR entre páginas (uma chave presente em toda a iteração aparece ao menos
+// uma vez).
+message ScanRequest {
+  string cursor = 1;          // "0" inicia; repassar o cursor devolvido até voltar "0"
+  optional string match = 2;  // MATCH <glob> — filtra chaves
+  optional int64  count = 3;  // COUNT <n>   — dica de trabalho/página
+  optional string type  = 4;  // TYPE <tipo> — filtra por tipo de valor
+}
+
+message ScanResponse {
+  string cursor = 1;          // próximo cursor; "0" = fim da iteração
+  repeated string keys = 2;   // chaves desta página (pode vir vazia sem ser o fim)
+}
