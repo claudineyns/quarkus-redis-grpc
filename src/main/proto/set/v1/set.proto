@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package io.github.claudineyns.redis.grpc.v1;
+
+option java_package = "io.github.claudineyns.redis.grpc.v1";
+option java_multiple_files = true;
+// Nome explícito da outer class (evita colisão com nomes derivados do arquivo).
+option java_outer_classname = "SetProto";
+
+// Família SET. Fatia 1: SADD, SREM, SCARD, SISMEMBER, SMISMEMBER, SMEMBERS.
+// Fatia 2: SPOP. Fatia 3: SSCAN.
+service SetService {
+  rpc SAdd(SAddRequest)             returns (SetCount);
+  rpc SRem(SRemRequest)             returns (SetCount);
+  rpc SCard(SCardRequest)           returns (SetCount);
+  rpc SIsMember(SIsMemberRequest)   returns (SetMembership);
+  rpc SMIsMember(SMIsMemberRequest) returns (SetMemberships);
+  rpc SMembers(SMembersRequest)     returns (SetMembers);
+  rpc SPop(SPopRequest)             returns (SetMembers);
+  rpc SScan(SScanRequest)           returns (SScanResponse);
+}
+
+message SAddRequest       { string key = 1; repeated string members = 2; }
+message SRemRequest       { string key = 1; repeated string members = 2; }
+message SCardRequest      { string key = 1; }
+message SIsMemberRequest  { string key = 1; string member = 2; }
+message SMIsMemberRequest { string key = 1; repeated string members = 2; }
+message SMembersRequest   { string key = 1; }
+message SPopRequest       { string key = 1; optional int64 count = 2; }
+
+message SetCount       { int64 count = 1; }            // adicionados / removidos / cardinalidade
+message SetMembership  { bool is_member = 1; }
+message SetMemberships { repeated bool members = 1; }  // 1 bool por entrada, na ordem
+message SetMembers     { repeated string members = 1; }
+
+// ---- Fatia 3: iteração incremental ----
+// SSCAN key cursor [MATCH pattern] [COUNT count]. Cada RPC = um SSCAN; o cliente
+// dirige a iteração. Garantias do Redis: cursor opaco; página pode vir VAZIA sem
+// ser o fim; COUNT é DICA (não limite); SEM ordem; membros podem REPETIR entre
+// páginas (membro presente em toda a iteração aparece ao menos uma vez).
+message SScanRequest {
+  string key = 1;
+  string cursor = 2;          // "0" inicia; repassar o cursor devolvido até voltar "0"
+  optional string match = 3;  // MATCH <glob> — filtra membros
+  optional int64  count = 4;  // COUNT <n>   — dica de trabalho/página
+}
+
+message SScanResponse {
+  string cursor = 1;          // próximo cursor; "0" = fim da iteração
+  repeated string members = 2;
+}

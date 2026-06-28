@@ -166,7 +166,7 @@ compile, run, and operate **in isolation**.
   src/main/proto/
     string/v1/string.proto   # StringService  (COMPLETE for v1)
     hash/v1/hash.proto       # HashService
-    set/v1/set.proto         # SetService
+    set/v1/set.proto         # SetService  (v0.3.0: SADD/SREM/SCARD/SISMEMBER/SMISMEMBER/SMEMBERS, SPOP, SSCAN)
     key/v1/key.proto         # KeyService  (COMPLETE: DEL/UNLINK/EXISTS/TYPE, EXPIRE family, TTL/PTTL, SCAN)
     # common/v1/common.proto — deferred until a shared type is needed
   ```
@@ -193,8 +193,9 @@ v2 candidates (adding a command later is a non-breaking change).
   `HKEYS`, `HVALS`, `HSETNX`, `HINCRBY`, `HSCAN`
 
 **SET — `SetService`**
-- `SADD`, `SREM`, `SMEMBERS`, `SISMEMBER`, `SCARD`, `SMISMEMBER`, `SPOP`,
-  `SRANDMEMBER`, `SSCAN`, `SINTER`, `SUNION`, `SDIFF`
+- **v0.3.0 scope:** `SADD`, `SREM`, `SMEMBERS`, `SISMEMBER`, `SCARD`,
+  `SMISMEMBER`, `SPOP`, `SSCAN`
+- **Deferred (future revision):** `SRANDMEMBER`, `SINTER`, `SUNION`, `SDIFF`
 
 **KEY (general) — `KeyService`**
 - `DEL`, `EXISTS`, `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`, `PERSIST`, `TYPE`,
@@ -449,5 +450,6 @@ Refines the caller authentication into a credential pair that the proxy validate
 - [x] Redis → gRPC error propagation format → gRPC status + raw message (section 5.1).
 - [x] `.proto` package and versioning scheme → `io.github.claudineyns.redis.grpc.v1`, versioning by directory (section 5).
 - [x] Cursor type / key format in `*SCAN` → opaque `string` cursor, `string` keys (section 5).
+- [x] SetService v0.3.0 scope → `SADD`/`SREM`/`SCARD`/`SISMEMBER`/`SMISMEMBER`/`SMEMBERS` + `SPOP` + `SSCAN`; **deferred to a future revision:** `SRANDMEMBER`, `SINTER`, `SUNION`, `SDIFF` (section 5).
 
 > All v1-scope architecture decisions are closed.
