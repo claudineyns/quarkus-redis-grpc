@@ -87,12 +87,12 @@ public class StringGrpcService implements StringService {
         final Request command = Request.cmd(Command.GET).arg(request.getKey());
         final long startNanos = System.nanoTime();
 
-        // redis.send devolve um Uni<Response> (não-bloqueante). Encadeamos:
-        //  - map: mede a latência do Redis, traduz a Response para o GetResponse
-        //    e loga a conclusão;
-        //  - onFailure: um erro RESP (ex.: WRONGTYPE) ou falha de infra é
-        //    convertido em status gRPC. Resultado normal — inclusive nil — NÃO
-        //    passa por aqui; nil é sucesso e sai no payload (DESIGN seção 5.1).
+        // redis.send retorna um fluxo reativo não-bloqueante. No estágio de map
+        // medimos a latência do Redis e traduzimos a resposta para o GetResponse,
+        // além de registrar a conclusão. No estágio de onFailure, um erro RESP como
+        // WRONGTYPE ou uma falha de infraestrutura vira status gRPC. O resultado
+        // normal, inclusive o nil, não passa por onFailure — nil é sucesso e sai no
+        // payload (DESIGN seção 5.1).
         return redis.send(command)
                 .map(response -> {
                     MDC.put(LogFields.REDIS_DURATION_MS,

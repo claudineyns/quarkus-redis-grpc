@@ -19,10 +19,21 @@
         <sonar.projectName>redis-grpc</sonar.projectName>
         <sonar.java.source>21</sonar.java.source>
         <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/jacoco-report/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
-        <!-- S6813: field injection é prática padrão e recomendada no Quarkus/CDI -->
-        <sonar.issue.ignore.multicriteria>e1</sonar.issue.ignore.multicriteria>
+        <sonar.issue.ignore.multicriteria>e1,e2,e3,e4</sonar.issue.ignore.multicriteria>
+        <!-- e1 S6813: field injection é prática padrão e recomendada no Quarkus/CDI -->
         <sonar.issue.ignore.multicriteria.e1.ruleKey>java:S6813</sonar.issue.ignore.multicriteria.e1.ruleKey>
         <sonar.issue.ignore.multicriteria.e1.resourceKey>**/*.java</sonar.issue.ignore.multicriteria.e1.resourceKey>
+        <!-- e2 S5778: assertThrows sobre cadeia reativa Mutiny (await().indefinitely())
+             é idioma de teste; extrair "uma só invocação" deixaria o teste pior -->
+        <sonar.issue.ignore.multicriteria.e2.ruleKey>java:S5778</sonar.issue.ignore.multicriteria.e2.ruleKey>
+        <sonar.issue.ignore.multicriteria.e2.resourceKey>**/*Test.java</sonar.issue.ignore.multicriteria.e2.resourceKey>
+        <!-- e3 S119: ReqT/RespT são os nomes idiomáticos do gRPC (ServerInterceptor) -->
+        <sonar.issue.ignore.multicriteria.e3.ruleKey>java:S119</sonar.issue.ignore.multicriteria.e3.ruleKey>
+        <sonar.issue.ignore.multicriteria.e3.resourceKey>**/*Interceptor.java</sonar.issue.ignore.multicriteria.e3.resourceKey>
+        <!-- e4 S6916: guard de pattern-match não se aplica a switch sobre enum
+             (oneof case do protobuf) no Java 21 -->
+        <sonar.issue.ignore.multicriteria.e4.ruleKey>java:S6916</sonar.issue.ignore.multicriteria.e4.ruleKey>
+        <sonar.issue.ignore.multicriteria.e4.resourceKey>**/StringGrpcService.java</sonar.issue.ignore.multicriteria.e4.resourceKey>
     </properties>
 
     <dependencyManagement>
