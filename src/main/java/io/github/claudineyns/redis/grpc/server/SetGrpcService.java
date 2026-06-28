@@ -10,6 +10,7 @@ import io.github.claudineyns.redis.grpc.v1.SCardRequest;
 import io.github.claudineyns.redis.grpc.v1.SIsMemberRequest;
 import io.github.claudineyns.redis.grpc.v1.SMIsMemberRequest;
 import io.github.claudineyns.redis.grpc.v1.SMembersRequest;
+import io.github.claudineyns.redis.grpc.v1.SPopRequest;
 import io.github.claudineyns.redis.grpc.v1.SRemRequest;
 import io.github.claudineyns.redis.grpc.v1.SetCount;
 import io.github.claudineyns.redis.grpc.v1.SetMembers;
@@ -43,6 +44,7 @@ public class SetGrpcService implements SetService {
     private static final String CMD_SISMEMBER = "SISMEMBER";
     private static final String CMD_SMISMEMBER = "SMISMEMBER";
     private static final String CMD_SMEMBERS = "SMEMBERS";
+    private static final String CMD_SPOP = "SPOP";
 
     @Inject
     Redis redis; // CDI: não pode ser final (exceção da convenção de DESIGN seção 10)
@@ -147,6 +149,40 @@ public class SetGrpcService implements SetService {
                         }
                     }
                     LOG.debugf("SMEMBERS concluído (members=%d)", result.getMembersCount());
+                    return result.build();
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<SetMembers> sPop(final SPopRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_SPOP);
+        MDC.put(LogFields.KEY, request.getKey());
+        final boolean hasCount = request.hasCount();
+        LOG.debugf("SPOP recebido (count=%s)", hasCount ? request.getCount() : "-");
+
+        final Request command = Request.cmd(Command.SPOP).arg(request.getKey());
+        if (hasCount) {
+            command.arg(request.getCount());
+        }
+        final long startNanos = System.nanoTime();
+
+        return redis.send(command)
+                .map(response -> {
+                    putRedisDuration(startNanos);
+                    // A forma da resposta difere: com count é um array (0..count);
+                    // sem count é um único bulk (ou nil quando a chave não existe).
+                    final SetMembers.Builder result = SetMembers.newBuilder();
+                    if (response != null) {
+                        if (hasCount) {
+                            for (final Response member : response) {
+                                result.addMembers(member.toString());
+                            }
+                        } else {
+                            result.addMembers(response.toString());
+                        }
+                    }
+                    LOG.debugf("SPOP concluído (members=%d)", result.getMembersCount());
                     return result.build();
                 })
                 .onFailure().transform(RedisErrors::toStatus);

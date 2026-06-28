@@ -14,6 +14,7 @@ import io.github.claudineyns.redis.grpc.v1.SCardRequest;
 import io.github.claudineyns.redis.grpc.v1.SIsMemberRequest;
 import io.github.claudineyns.redis.grpc.v1.SMIsMemberRequest;
 import io.github.claudineyns.redis.grpc.v1.SMembersRequest;
+import io.github.claudineyns.redis.grpc.v1.SPopRequest;
 import io.github.claudineyns.redis.grpc.v1.SRemRequest;
 import io.github.claudineyns.redis.grpc.v1.SetMembers;
 import io.github.claudineyns.redis.grpc.v1.SetMemberships;
@@ -127,7 +128,58 @@ class SetGrpcServiceTest {
         assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
     }
 
+    // ---------- pop (Fatia 2) ----------
+
+    @Test
+    void sPopWithoutCountReturnsOneAndRemoves() {
+        del("test:set:pop1");
+        client.sAdd(SAddRequest.newBuilder().setKey("test:set:pop1")
+                .addMembers("a").build()).await().indefinitely();
+        final SetMembers popped = client.sPop(SPopRequest.newBuilder()
+                .setKey("test:set:pop1").build()).await().indefinitely();
+        assertEquals(1, popped.getMembersCount());
+        assertEquals("a", popped.getMembers(0));
+        assertEquals(0L, rawCard("test:set:pop1"));
+    }
+
+    @Test
+    void sPopWithCountReturnsUpToCount() {
+        del("test:set:pop2");
+        client.sAdd(SAddRequest.newBuilder().setKey("test:set:pop2")
+                .addMembers("a").addMembers("b").addMembers("c").build()).await().indefinitely();
+        final SetMembers popped = client.sPop(SPopRequest.newBuilder()
+                .setKey("test:set:pop2").setCount(2).build()).await().indefinitely();
+        assertEquals(2, popped.getMembersCount());
+        assertEquals(1L, rawCard("test:set:pop2"));
+    }
+
+    @Test
+    void sPopCountExceedingCardinalityReturnsAll() {
+        del("test:set:pop3");
+        client.sAdd(SAddRequest.newBuilder().setKey("test:set:pop3")
+                .addMembers("a").addMembers("b").build()).await().indefinitely();
+        final SetMembers popped = client.sPop(SPopRequest.newBuilder()
+                .setKey("test:set:pop3").setCount(5).build()).await().indefinitely();
+        assertEquals(2, popped.getMembersCount());
+        assertEquals(0L, rawCard("test:set:pop3"));
+    }
+
+    @Test
+    void sPopAbsentReturnsEmpty() {
+        del("test:set:pop-absent");
+        final SetMembers noCount = client.sPop(SPopRequest.newBuilder()
+                .setKey("test:set:pop-absent").build()).await().indefinitely();
+        assertEquals(0, noCount.getMembersCount());
+        final SetMembers withCount = client.sPop(SPopRequest.newBuilder()
+                .setKey("test:set:pop-absent").setCount(3).build()).await().indefinitely();
+        assertEquals(0, withCount.getMembersCount());
+    }
+
     // ---------- helpers ----------
+
+    private long rawCard(final String key) {
+        return redis.send(Request.cmd(Command.SCARD).arg(key)).await().indefinitely().toLong();
+    }
 
     private void del(final String key) {
         redis.send(Request.cmd(Command.DEL).arg(key)).await().indefinitely();

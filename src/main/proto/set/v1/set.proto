@@ -8,6 +8,7 @@ option java_multiple_files = true;
 option java_outer_classname = "SetProto";
 
 // Família SET. Fatia 1: SADD, SREM, SCARD, SISMEMBER, SMISMEMBER, SMEMBERS.
+// Fatia 2: SPOP.
 service SetService {
   rpc SAdd(SAddRequest)             returns (SetCount);
   rpc SRem(SRemRequest)             returns (SetCount);
@@ -15,6 +16,7 @@ service SetService {
   rpc SIsMember(SIsMemberRequest)   returns (SetMembership);
   rpc SMIsMember(SMIsMemberRequest) returns (SetMemberships);
   rpc SMembers(SMembersRequest)     returns (SetMembers);
+  rpc SPop(SPopRequest)             returns (SetMembers);
 }
 
 message SAddRequest       { string key = 1; repeated string members = 2; }
@@ -23,6 +25,7 @@ message SCardRequest      { string key = 1; }
 message SIsMemberRequest  { string key = 1; string member = 2; }
 message SMIsMemberRequest { string key = 1; repeated string members = 2; }
 message SMembersRequest   { string key = 1; }
+message SPopRequest       { string key = 1; optional int64 count = 2; }
 
 message SetCount       { int64 count = 1; }            // adicionados / removidos / cardinalidade
 message SetMembership  { bool is_member = 1; }
