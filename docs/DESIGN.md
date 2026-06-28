@@ -193,8 +193,9 @@ v2 candidates (adding a command later is a non-breaking change).
   `HKEYS`, `HVALS`, `HSETNX`, `HINCRBY`, `HSCAN`
 
 **SET — `SetService`**
-- `SADD`, `SREM`, `SMEMBERS`, `SISMEMBER`, `SCARD`, `SMISMEMBER`, `SPOP`,
-  `SRANDMEMBER`, `SSCAN`, `SINTER`, `SUNION`, `SDIFF`
+- **v0.3.0 scope:** `SADD`, `SREM`, `SMEMBERS`, `SISMEMBER`, `SCARD`,
+  `SMISMEMBER`, `SPOP`, `SSCAN`
+- **Deferred (future revision):** `SRANDMEMBER`, `SINTER`, `SUNION`, `SDIFF`
 
 **KEY (general) — `KeyService`**
 - `DEL`, `EXISTS`, `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`, `PERSIST`, `TYPE`,
@@ -449,5 +450,6 @@ Refines the caller authentication into a credential pair that the proxy validate
 - [x] Redis → gRPC error propagation format → gRPC status + raw message (section 5.1).
 - [x] `.proto` package and versioning scheme → `io.github.claudineyns.redis.grpc.v1`, versioning by directory (section 5).
 - [x] Cursor type / key format in `*SCAN` → opaque `string` cursor, `string` keys (section 5).
+- [x] SetService v0.3.0 scope → `SADD`/`SREM`/`SCARD`/`SISMEMBER`/`SMISMEMBER`/`SMEMBERS` + `SPOP` + `SSCAN`; **deferred to a future revision:** `SRANDMEMBER`, `SINTER`, `SUNION`, `SDIFF` (section 5).
 
 > All v1-scope architecture decisions are closed.

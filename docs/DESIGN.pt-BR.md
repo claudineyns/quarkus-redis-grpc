@@ -195,8 +195,9 @@ ficam como candidatos a v2 (adicionar comando depois é mudança não-quebra).
   `HKEYS`, `HVALS`, `HSETNX`, `HINCRBY`, `HSCAN`
 
 **SET — `SetService`**
-- `SADD`, `SREM`, `SMEMBERS`, `SISMEMBER`, `SCARD`, `SMISMEMBER`, `SPOP`,
-  `SRANDMEMBER`, `SSCAN`, `SINTER`, `SUNION`, `SDIFF`
+- **Escopo v0.3.0:** `SADD`, `SREM`, `SMEMBERS`, `SISMEMBER`, `SCARD`,
+  `SMISMEMBER`, `SPOP`, `SSCAN`
+- **Adiados (revisão futura):** `SRANDMEMBER`, `SINTER`, `SUNION`, `SDIFF`
 
 **KEY (geral) — `KeyService`**
 - `DEL`, `EXISTS`, `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`, `PERSIST`, `TYPE`,
@@ -454,5 +455,6 @@ Refina a autenticação do chamador em um par de credenciais que o proxy valida
 - [x] Formato de propagação de erros Redis → gRPC → status gRPC + msg crua (seção 5.1).
 - [x] Pacote e esquema de versão do `.proto` → `io.github.claudineyns.redis.grpc.v1`, versão por diretório (seção 5).
 - [x] Tipo do cursor / formato das chaves no `*SCAN` → cursor `string` opaco, chaves `string` (seção 5).
+- [x] Escopo da SetService na v0.3.0 → `SADD`/`SREM`/`SCARD`/`SISMEMBER`/`SMISMEMBER`/`SMEMBERS` + `SPOP` + `SSCAN`; **adiados para revisão futura:** `SRANDMEMBER`, `SINTER`, `SUNION`, `SDIFF` (seção 5).
 
 > Todas as decisões de arquitetura do escopo v1 estão fechadas.
