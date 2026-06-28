@@ -167,7 +167,7 @@ compile, run, and operate **in isolation**.
     string/v1/string.proto   # StringService  (COMPLETE for v1)
     hash/v1/hash.proto       # HashService
     set/v1/set.proto         # SetService
-    key/v1/key.proto         # KeyService  (slices 1-2: DEL/UNLINK/EXISTS/TYPE, EXPIRE family, TTL/PTTL)
+    key/v1/key.proto         # KeyService  (COMPLETE: DEL/UNLINK/EXISTS/TYPE, EXPIRE family, TTL/PTTL, SCAN)
     # common/v1/common.proto — deferred until a shared type is needed
   ```
 - **Batch extensibility:** the protos MUST be designed to later accommodate a

@@ -20,6 +20,7 @@ service KeyService {
   rpc Persist(PersistRequest)     returns (KeyChange);
   rpc Ttl(TtlRequest)             returns (TtlValue);
   rpc PTtl(PTtlRequest)           returns (TtlValue);
+  rpc Scan(ScanRequest)           returns (ScanResponse);
 }
 
 message DelRequest    { repeated string keys = 1; }
@@ -59,4 +60,22 @@ message KeyChange {                     // 0/1 do Redis traduzido para bool
 
 message TtlValue {                      // tempo restante; -1 sem TTL, -2 inexistente
   int64 value = 1;
+}
+
+// ---- Fatia 3: iteração incremental ----
+// SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]. Cada RPC = um SCAN; o
+// cliente dirige a iteração. Garantias do Redis: cursor opaco; a página pode vir
+// VAZIA sem ser o fim; COUNT é DICA (não limite); SEM ordem; chaves podem
+// REPETIR entre páginas (uma chave presente em toda a iteração aparece ao menos
+// uma vez).
+message ScanRequest {
+  string cursor = 1;          // "0" inicia; repassar o cursor devolvido até voltar "0"
+  optional string match = 2;  // MATCH <glob> — filtra chaves
+  optional int64  count = 3;  // COUNT <n>   — dica de trabalho/página
+  optional string type  = 4;  // TYPE <tipo> — filtra por tipo de valor
+}
+
+message ScanResponse {
+  string cursor = 1;          // próximo cursor; "0" = fim da iteração
+  repeated string keys = 2;   // chaves desta página (pode vir vazia sem ser o fim)
 }

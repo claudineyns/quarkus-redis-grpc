@@ -20,6 +20,8 @@ import io.github.claudineyns.redis.grpc.v1.PExpireAtRequest;
 import io.github.claudineyns.redis.grpc.v1.PExpireRequest;
 import io.github.claudineyns.redis.grpc.v1.PTtlRequest;
 import io.github.claudineyns.redis.grpc.v1.PersistRequest;
+import io.github.claudineyns.redis.grpc.v1.ScanRequest;
+import io.github.claudineyns.redis.grpc.v1.ScanResponse;
 import io.github.claudineyns.redis.grpc.v1.TtlRequest;
 import io.github.claudineyns.redis.grpc.v1.TtlValue;
 import io.github.claudineyns.redis.grpc.v1.TypeRequest;
@@ -236,6 +238,55 @@ class KeyGrpcServiceTest {
         assertTrue(client.expire(ExpireRequest.newBuilder().setKey("test:k:gt")
                 .setSeconds(500).setCondition(ExpireCondition.EXPIRE_CONDITION_GT).build())
                 .await().indefinitely().getApplied()); // 500 > 100 → sim
+    }
+
+    // ---------- iteração (Fatia 3): SCAN ----------
+
+    @Test
+    void scanIteratesAllMatchingKeys() {
+        for (int i = 0; i < 50; i++) {
+            seed("scan:unit:" + i, "v");
+        }
+        // COUNT baixo força múltiplas páginas; dedup pois SCAN pode repetir.
+        final java.util.Set<String> found = scanAll("scan:unit:*", 10L, null);
+        assertEquals(50, found.size());
+        assertTrue(found.contains("scan:unit:0"));
+        assertTrue(found.contains("scan:unit:49"));
+    }
+
+    @Test
+    void scanTypeFilterReturnsOnlyMatchingType() {
+        seed("scan:type:str", "v");
+        redis.send(Request.cmd(Command.HSET).arg("scan:type:hash").arg("f").arg("v"))
+                .await().indefinitely();
+        final java.util.Set<String> found = scanAll("scan:type:*", null, "string");
+        assertTrue(found.contains("scan:type:str"));
+        assertFalse(found.contains("scan:type:hash"));
+    }
+
+    @Test
+    void scanNoMatchTerminatesEmpty() {
+        final java.util.Set<String> found = scanAll("scan:none:*", null, null);
+        assertTrue(found.isEmpty());
+    }
+
+    /** Itera o SCAN do cursor "0" até voltar "0", coletando chaves distintas. */
+    private java.util.Set<String> scanAll(final String match, final Long count, final String type) {
+        final java.util.Set<String> all = new java.util.HashSet<>();
+        String cursor = "0";
+        do {
+            final ScanRequest.Builder request = ScanRequest.newBuilder().setCursor(cursor).setMatch(match);
+            if (count != null) {
+                request.setCount(count);
+            }
+            if (type != null) {
+                request.setType(type);
+            }
+            final ScanResponse response = client.scan(request.build()).await().indefinitely();
+            all.addAll(response.getKeysList());
+            cursor = response.getCursor();
+        } while (!"0".equals(cursor));
+        return all;
     }
 
     // ---------- helpers ----------

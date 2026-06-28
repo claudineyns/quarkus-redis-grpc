@@ -18,6 +18,8 @@ import io.github.claudineyns.redis.grpc.v1.PExpireAtRequest;
 import io.github.claudineyns.redis.grpc.v1.PExpireRequest;
 import io.github.claudineyns.redis.grpc.v1.PTtlRequest;
 import io.github.claudineyns.redis.grpc.v1.PersistRequest;
+import io.github.claudineyns.redis.grpc.v1.ScanRequest;
+import io.github.claudineyns.redis.grpc.v1.ScanResponse;
 import io.github.claudineyns.redis.grpc.v1.TtlRequest;
 import io.github.claudineyns.redis.grpc.v1.TtlValue;
 import io.github.claudineyns.redis.grpc.v1.TypeRequest;
@@ -35,7 +37,7 @@ import jakarta.inject.Inject;
  * Família KEY (cross-type) — implementação gRPC do {@code KeyService}.
  *
  * <p>Tradução 1:1 de comandos Redis (DESIGN seção 2). Fatia 1: DEL, UNLINK,
- * EXISTS, TYPE.
+ * EXISTS, TYPE. Fatia 2: EXPIRE-família, PERSIST, TTL/PTTL. Fatia 3: SCAN.
  */
 @GrpcService
 public class KeyGrpcService implements KeyService {
@@ -53,12 +55,18 @@ public class KeyGrpcService implements KeyService {
     private static final String CMD_PERSIST = "PERSIST";
     private static final String CMD_TTL = "TTL";
     private static final String CMD_PTTL = "PTTL";
+    private static final String CMD_SCAN = "SCAN";
 
     // Condições do EXPIRE (Redis 7+).
     private static final String OPT_NX = "NX";
     private static final String OPT_XX = "XX";
     private static final String OPT_GT = "GT";
     private static final String OPT_LT = "LT";
+
+    // Opções do SCAN.
+    private static final String OPT_MATCH = "MATCH";
+    private static final String OPT_COUNT = "COUNT";
+    private static final String OPT_TYPE = "TYPE";
 
     private static final String TYPE_NONE = "none";
 
@@ -168,6 +176,45 @@ public class KeyGrpcService implements KeyService {
         MDC.put(LogFields.KEY, request.getKey());
         LOG.debug("PTTL recebido");
         return sendTtl(Request.cmd(Command.PTTL).arg(request.getKey()), CMD_PTTL);
+    }
+
+    @Override
+    public Uni<ScanResponse> scan(final ScanRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_SCAN);
+        LOG.debug("SCAN recebido");
+
+        // SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]. Opções só são
+        // anexadas quando informadas (proto3 optional → hasX()).
+        final Request command = Request.cmd(Command.SCAN).arg(request.getCursor());
+        if (request.hasMatch()) {
+            command.arg(OPT_MATCH).arg(request.getMatch());
+        }
+        if (request.hasCount()) {
+            command.arg(OPT_COUNT).arg(request.getCount());
+        }
+        if (request.hasType()) {
+            command.arg(OPT_TYPE).arg(request.getType());
+        }
+        final long startNanos = System.nanoTime();
+
+        return redis.send(command)
+                .map(response -> {
+                    MDC.put(LogFields.REDIS_DURATION_MS,
+                            Long.toString((System.nanoTime() - startNanos) / 1_000_000L));
+                    // SCAN devolve um array de 2: [0] = próximo cursor (bulk),
+                    // [1] = array (possivelmente vazio) com as chaves da página.
+                    final String cursor = response.get(0).toString();
+                    final ScanResponse.Builder result = ScanResponse.newBuilder().setCursor(cursor);
+                    final Response keys = response.get(1);
+                    if (keys != null) {
+                        for (final Response key : keys) {
+                            result.addKeys(key.toString());
+                        }
+                    }
+                    LOG.debugf("SCAN concluído (cursor=%s, keys=%d)", cursor, result.getKeysCount());
+                    return result.build();
+                })
+                .onFailure().transform(RedisErrors::toStatus);
     }
 
     /** Acrescenta a condição NX/XX/GT/LT ao comando, quando informada. */
