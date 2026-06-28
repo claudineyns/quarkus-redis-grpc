@@ -32,8 +32,21 @@ spec:
       containers:
         - name: redis
           image: ${REDIS_IMAGE}
-          # Persistência habilitada (AOF), gravando no volume efêmero em /data.
-          args: ["redis-server", "--dir", "/data", "--appendonly", "yes"]
+          # Persistência (AOF) + AUTH (requirepass). A senha vem do Secret via env;
+          # sh -c permite que o \$REDIS_PASSWORD seja expandido dentro do container.
+          command: ["sh", "-c", "exec redis-server --dir /data --appendonly yes --requirepass \"\$REDIS_PASSWORD\""]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ${REDIS_AUTH_SECRET}
+                  key: password
+            # redis-cli (via oc exec) autentica automaticamente lendo REDISCLI_AUTH.
+            - name: REDISCLI_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: ${REDIS_AUTH_SECRET}
+                  key: password
           ports:
             - containerPort: 6379
           volumeMounts:

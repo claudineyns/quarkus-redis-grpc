@@ -31,6 +31,8 @@ export EDGE_HOST="${EDGE_HOST:-redis-grpc.apps-crc.testing}"
 export TLS_SECRET="${TLS_SECRET:-redis-grpc-tls}"
 export CERT_DIR="${CERT_DIR:-temp/tls}"
 
+# Secret com a senha do Redis (requirepass) — presente nos dois namespaces.
+export REDIS_AUTH_SECRET="${REDIS_AUTH_SECRET:-redis-auth}"
 # Secret com a chave mestra (HMAC) do interceptor de credenciais (DESIGN 6.1).
 export AUTH_SECRET="${AUTH_SECRET:-redis-grpc-auth}"
 # ConfigMap com a allowlist de hashes SHA-256(ACCESS_KEY) (hashes não são segredo).

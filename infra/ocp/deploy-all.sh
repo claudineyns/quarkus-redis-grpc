@@ -4,6 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 bash ./00-namespaces.sh
+bash ./05-redis-auth-secret.sh
 bash ./10-redis.sh
 bash ./25-tls-secret.sh
 bash ./26-master-key-secret.sh

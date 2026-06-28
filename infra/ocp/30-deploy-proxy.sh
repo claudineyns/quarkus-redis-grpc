@@ -46,6 +46,12 @@ spec:
             # Código agnóstico: endereço do Redis injetado por configuração.
             - name: QUARKUS_REDIS_HOSTS
               value: "redis://${REDIS_HOST}:6379"
+            # Senha do Redis (requirepass): Secret → propriedade quarkus.redis.password.
+            - name: QUARKUS_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ${REDIS_AUTH_SECRET}
+                  key: password
             # Nível de log da app (DEBUG no CRC; toggle por ambiente — DESIGN 8.1).
             - name: QUARKUS_LOG_CATEGORY__IO_GITHUB_CLAUDINEYNS__LEVEL
               value: "${APP_LOG_LEVEL}"
