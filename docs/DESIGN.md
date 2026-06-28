@@ -166,7 +166,7 @@ compile, run, and operate **in isolation**.
   src/main/proto/
     string/v1/string.proto   # StringService  (COMPLETE for v1)
     hash/v1/hash.proto       # HashService
-    set/v1/set.proto         # SetService
+    set/v1/set.proto         # SetService  (v0.3.0: SADD/SREM/SCARD/SISMEMBER/SMISMEMBER/SMEMBERS, SPOP, SSCAN)
     key/v1/key.proto         # KeyService  (COMPLETE: DEL/UNLINK/EXISTS/TYPE, EXPIRE family, TTL/PTTL, SCAN)
     # common/v1/common.proto — deferred until a shared type is needed
   ```

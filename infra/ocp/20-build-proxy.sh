@@ -11,8 +11,10 @@ source ./env.sh
 PROJECT_ROOT="$(cd ../.. && pwd)"
 STAGE="${PROJECT_ROOT}/temp/docker-context"
 
-echo "empacotando localmente (mvn package, fast-jar)..."
-( cd "$PROJECT_ROOT" && mvn -B -ntp -DskipTests package )
+echo "empacotando localmente (mvn clean package, fast-jar)..."
+# 'clean' evita empacotar classes/stubs residuais de um target inconsistente
+# (ex.: geração interrompida) — fonte de ClassFormatError na imagem.
+( cd "$PROJECT_ROOT" && mvn -B -ntp -DskipTests clean package )
 
 echo "preparando contexto Docker em ${STAGE}..."
 rm -rf "$STAGE"

@@ -16,6 +16,8 @@ import io.github.claudineyns.redis.grpc.v1.SMIsMemberRequest;
 import io.github.claudineyns.redis.grpc.v1.SMembersRequest;
 import io.github.claudineyns.redis.grpc.v1.SPopRequest;
 import io.github.claudineyns.redis.grpc.v1.SRemRequest;
+import io.github.claudineyns.redis.grpc.v1.SScanRequest;
+import io.github.claudineyns.redis.grpc.v1.SScanResponse;
 import io.github.claudineyns.redis.grpc.v1.SetMembers;
 import io.github.claudineyns.redis.grpc.v1.SetMemberships;
 import io.github.claudineyns.redis.grpc.v1.SetService;
@@ -173,6 +175,59 @@ class SetGrpcServiceTest {
         final SetMembers withCount = client.sPop(SPopRequest.newBuilder()
                 .setKey("test:set:pop-absent").setCount(3).build()).await().indefinitely();
         assertEquals(0, withCount.getMembersCount());
+    }
+
+    // ---------- iteração (Fatia 3): SSCAN ----------
+
+    @Test
+    void sScanIteratesAllMembers() {
+        del("test:set:scan");
+        final SAddRequest.Builder seed = SAddRequest.newBuilder().setKey("test:set:scan");
+        for (int i = 0; i < 50; i++) {
+            seed.addMembers("m" + i);
+        }
+        client.sAdd(seed.build()).await().indefinitely();
+        // COUNT baixo força múltiplas páginas; dedup pois SSCAN pode repetir.
+        final java.util.Set<String> found = sScanAll("test:set:scan", null, 10L);
+        assertEquals(50, found.size());
+        assertTrue(found.contains("m0"));
+        assertTrue(found.contains("m49"));
+    }
+
+    @Test
+    void sScanMatchFilters() {
+        del("test:set:scanm");
+        client.sAdd(SAddRequest.newBuilder().setKey("test:set:scanm")
+                .addMembers("keep:1").addMembers("keep:2").addMembers("drop:1")
+                .build()).await().indefinitely();
+        final java.util.Set<String> found = sScanAll("test:set:scanm", "keep:*", null);
+        assertEquals(java.util.Set.of("keep:1", "keep:2"), found);
+    }
+
+    @Test
+    void sScanAbsentTerminatesEmpty() {
+        del("test:set:scan-absent");
+        final java.util.Set<String> found = sScanAll("test:set:scan-absent", null, null);
+        assertTrue(found.isEmpty());
+    }
+
+    /** Itera o SSCAN do cursor "0" até voltar "0", coletando membros distintos. */
+    private java.util.Set<String> sScanAll(final String key, final String match, final Long count) {
+        final java.util.Set<String> all = new java.util.HashSet<>();
+        String cursor = "0";
+        do {
+            final SScanRequest.Builder request = SScanRequest.newBuilder().setKey(key).setCursor(cursor);
+            if (match != null) {
+                request.setMatch(match);
+            }
+            if (count != null) {
+                request.setCount(count);
+            }
+            final SScanResponse response = client.sScan(request.build()).await().indefinitely();
+            all.addAll(response.getMembersList());
+            cursor = response.getCursor();
+        } while (!"0".equals(cursor));
+        return all;
     }
 
     // ---------- helpers ----------

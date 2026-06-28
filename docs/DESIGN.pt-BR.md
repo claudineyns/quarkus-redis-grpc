@@ -167,7 +167,7 @@ compilar, rodar e operar **isoladamente**.
   src/main/proto/
     string/v1/string.proto   # StringService  (COMPLETO para v1)
     hash/v1/hash.proto       # HashService
-    set/v1/set.proto         # SetService
+    set/v1/set.proto         # SetService  (v0.3.0: SADD/SREM/SCARD/SISMEMBER/SMISMEMBER/SMEMBERS, SPOP, SSCAN)
     key/v1/key.proto         # KeyService  (COMPLETO: DEL/UNLINK/EXISTS/TYPE, família EXPIRE, TTL/PTTL, SCAN)
     # common/v1/common.proto — adiado até haver um tipo compartilhado
   ```

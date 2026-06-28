@@ -12,6 +12,8 @@ import io.github.claudineyns.redis.grpc.v1.SMIsMemberRequest;
 import io.github.claudineyns.redis.grpc.v1.SMembersRequest;
 import io.github.claudineyns.redis.grpc.v1.SPopRequest;
 import io.github.claudineyns.redis.grpc.v1.SRemRequest;
+import io.github.claudineyns.redis.grpc.v1.SScanRequest;
+import io.github.claudineyns.redis.grpc.v1.SScanResponse;
 import io.github.claudineyns.redis.grpc.v1.SetCount;
 import io.github.claudineyns.redis.grpc.v1.SetMembers;
 import io.github.claudineyns.redis.grpc.v1.SetMembership;
@@ -45,6 +47,11 @@ public class SetGrpcService implements SetService {
     private static final String CMD_SMISMEMBER = "SMISMEMBER";
     private static final String CMD_SMEMBERS = "SMEMBERS";
     private static final String CMD_SPOP = "SPOP";
+    private static final String CMD_SSCAN = "SSCAN";
+
+    // Opções do SSCAN.
+    private static final String OPT_MATCH = "MATCH";
+    private static final String OPT_COUNT = "COUNT";
 
     @Inject
     Redis redis; // CDI: não pode ser final (exceção da convenção de DESIGN seção 10)
@@ -183,6 +190,42 @@ public class SetGrpcService implements SetService {
                         }
                     }
                     LOG.debugf("SPOP concluído (members=%d)", result.getMembersCount());
+                    return result.build();
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<SScanResponse> sScan(final SScanRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_SSCAN);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("SSCAN recebido");
+
+        // SSCAN key cursor [MATCH pattern] [COUNT count]. Opções só são anexadas
+        // quando informadas (proto3 optional → hasX()). SSCAN não tem TYPE.
+        final Request command = Request.cmd(Command.SSCAN).arg(request.getKey()).arg(request.getCursor());
+        if (request.hasMatch()) {
+            command.arg(OPT_MATCH).arg(request.getMatch());
+        }
+        if (request.hasCount()) {
+            command.arg(OPT_COUNT).arg(request.getCount());
+        }
+        final long startNanos = System.nanoTime();
+
+        return redis.send(command)
+                .map(response -> {
+                    putRedisDuration(startNanos);
+                    // SSCAN devolve um array de 2: [0] = próximo cursor (bulk),
+                    // [1] = array (possivelmente vazio) com os membros da página.
+                    final String cursor = response.get(0).toString();
+                    final SScanResponse.Builder result = SScanResponse.newBuilder().setCursor(cursor);
+                    final Response members = response.get(1);
+                    if (members != null) {
+                        for (final Response member : members) {
+                            result.addMembers(member.toString());
+                        }
+                    }
+                    LOG.debugf("SSCAN concluído (cursor=%s, members=%d)", cursor, result.getMembersCount());
                     return result.build();
                 })
                 .onFailure().transform(RedisErrors::toStatus);
