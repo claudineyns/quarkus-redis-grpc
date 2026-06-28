@@ -33,6 +33,15 @@ spec:
       containers:
         - name: ${APP_NAME}
           image: ${IMAGE}
+          # Requests = garantia p/ o scheduler; limits = teto (CPU throttle, OOM-kill
+          # na memória). A JVM (container-aware) dimensiona o heap pelo limite.
+          resources:
+            requests:
+              cpu: "${CPU_REQUEST}"
+              memory: "${MEM_REQUEST}"
+            limits:
+              cpu: "${CPU_LIMIT}"
+              memory: "${MEM_LIMIT}"
           env:
             # Código agnóstico: endereço do Redis injetado por configuração.
             - name: QUARKUS_REDIS_HOSTS

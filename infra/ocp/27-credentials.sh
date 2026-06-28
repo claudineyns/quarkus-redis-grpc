@@ -20,8 +20,9 @@ echo "lendo a chave mestra do Secret '${AUTH_SECRET}'..."
 MASTER_KEY="$(oc --context "$OC_CXT" -n "$PROXY_NAMESPACE" get secret "$AUTH_SECRET" \
   -o jsonpath='{.data.master-key}' | base64 -d)"
 
-# ACCESS_KEY aleatório (hex 16 bytes); SECRET_KEY e HASH derivados conforme acima.
-ACCESS_KEY="$(openssl rand -hex 16)"
+# ACCESS_KEY FIXO de laboratório (determinístico): mantém o ConfigMap em sincronia
+# com a credencial hardcoded no cliente Python (tools/grpc-client/client.py).
+ACCESS_KEY="b2e9cd5d8e2963ee4b5ca4e038912833"
 SECRET_KEY="$(printf '%s' "$ACCESS_KEY" | openssl dgst -sha256 -mac HMAC -macopt "hexkey:${MASTER_KEY}" | awk '{print $NF}')"
 HASH="$(printf '%s' "$ACCESS_KEY" | openssl dgst -sha256 | awk '{print $NF}')"
 

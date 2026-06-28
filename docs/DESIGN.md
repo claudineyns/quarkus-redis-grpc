@@ -298,7 +298,14 @@ Rules when implemented:
   `SHUTDOWN`, `DEBUG`, etc.) do NOT exist in the gRPC surface — the allowlist IS
   the RPC surface itself, not a configurable toggle to be turned on/off.
 
-### 6.1 Access credentials — ACCESS_KEY / SECRET_KEY (PENDING)
+### 6.1 Access credentials — ACCESS_KEY / SECRET_KEY
+
+**Status:** implemented — `CredentialValidator` + global `AuthInterceptor`
+(covers reflection). Header names are configurable
+(`proxy.auth.access-key-header` / `proxy.auth.secret-key-header`, defaults
+`x-grpc-access-key` / `x-grpc-secret-key`). Auth is **active only when
+`proxy.auth.master-key` is set** (dev/test run without it). **Automatic HTTPS
+emission remains future.**
 
 Refines the caller authentication into a credential pair that the proxy validates
 **locally**, without storing any per-user secret.

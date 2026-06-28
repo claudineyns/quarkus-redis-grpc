@@ -11,6 +11,13 @@ export REDIS_NAME="${REDIS_NAME:-redis}"
 # Nível de log da aplicação no deploy (DEBUG no CRC para a validação quente).
 export APP_LOG_LEVEL="${APP_LOG_LEVEL:-DEBUG}"
 
+# Requests/limits de CPU e memória do container do proxy (overridable).
+# JVM é container-aware (JAVA_TOOL_OPTIONS): respeita o limite de memória.
+export CPU_REQUEST="${CPU_REQUEST:-250m}"
+export CPU_LIMIT="${CPU_LIMIT:-1}"
+export MEM_REQUEST="${MEM_REQUEST:-256Mi}"
+export MEM_LIMIT="${MEM_LIMIT:-512Mi}"
+
 # Imagens: builder S2I (público) e Redis (público).
 export BUILDER_IMAGE="${BUILDER_IMAGE:-registry.access.redhat.com/ubi9/openjdk-21:latest}"
 export REDIS_IMAGE="${REDIS_IMAGE:-docker.io/redis:8}"
