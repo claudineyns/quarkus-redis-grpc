@@ -12,9 +12,15 @@ import com.google.protobuf.ByteString;
 import io.github.claudineyns.redis.grpc.v1.FieldValue;
 import io.github.claudineyns.redis.grpc.v1.HDelRequest;
 import io.github.claudineyns.redis.grpc.v1.HExistsRequest;
+import io.github.claudineyns.redis.grpc.v1.HGetAllRequest;
 import io.github.claudineyns.redis.grpc.v1.HGetRequest;
+import io.github.claudineyns.redis.grpc.v1.HKeysRequest;
 import io.github.claudineyns.redis.grpc.v1.HLenRequest;
+import io.github.claudineyns.redis.grpc.v1.HMGetRequest;
+import io.github.claudineyns.redis.grpc.v1.HMGetResponse;
 import io.github.claudineyns.redis.grpc.v1.HSetRequest;
+import io.github.claudineyns.redis.grpc.v1.HValsRequest;
+import io.github.claudineyns.redis.grpc.v1.HashEntries;
 import io.github.claudineyns.redis.grpc.v1.HashService;
 import io.github.claudineyns.redis.grpc.v1.HashValue;
 import io.grpc.Status;
@@ -120,6 +126,67 @@ class HashGrpcServiceTest {
                 client.hSet(HSetRequest.newBuilder().setKey("test:hash:wrong")
                         .addFields(fv("f", "v")).build()).await().indefinitely());
         assertEquals(Status.Code.FAILED_PRECONDITION, failure.getStatus().getCode());
+    }
+
+    // ---------- múltiplos / listagem (Fatia 2) ----------
+
+    @Test
+    void hMGetAlignedToInputWithNils() {
+        del("test:hash:mget");
+        client.hSet(HSetRequest.newBuilder().setKey("test:hash:mget")
+                .addFields(fv("a", "1")).addFields(fv("c", "3")).build()).await().indefinitely();
+        final HMGetResponse response = client.hMGet(HMGetRequest.newBuilder()
+                .setKey("test:hash:mget").addFields("a").addFields("b").addFields("c")
+                .build()).await().indefinitely();
+        assertEquals(3, response.getValuesCount());
+        assertTrue(response.getValues(0).hasValue());
+        assertEquals("1", response.getValues(0).getValue().toStringUtf8());
+        assertFalse(response.getValues(1).hasValue()); // b ausente -> nil
+        assertEquals("3", response.getValues(2).getValue().toStringUtf8());
+    }
+
+    @Test
+    void hMGetEmptyRejected() {
+        final StatusRuntimeException failure = assertThrows(StatusRuntimeException.class, () ->
+                client.hMGet(HMGetRequest.newBuilder().setKey("test:hash:mget-empty").build())
+                        .await().indefinitely());
+        assertEquals(Status.Code.INVALID_ARGUMENT, failure.getStatus().getCode());
+    }
+
+    @Test
+    void hGetAllReturnsAllPairs() {
+        del("test:hash:all");
+        client.hSet(HSetRequest.newBuilder().setKey("test:hash:all")
+                .addFields(fv("a", "1")).addFields(fv("b", "2")).build()).await().indefinitely();
+        final HashEntries response = client.hGetAll(HGetAllRequest.newBuilder()
+                .setKey("test:hash:all").build()).await().indefinitely();
+        assertEquals(2, response.getEntriesCount());
+        final java.util.Map<String, String> map = new java.util.HashMap<>();
+        response.getEntriesList().forEach(e -> map.put(e.getField(), e.getValue().toStringUtf8()));
+        assertEquals(java.util.Map.of("a", "1", "b", "2"), map);
+    }
+
+    @Test
+    void hGetAllAbsentReturnsEmpty() {
+        del("test:hash:all-absent");
+        final HashEntries response = client.hGetAll(HGetAllRequest.newBuilder()
+                .setKey("test:hash:all-absent").build()).await().indefinitely();
+        assertEquals(0, response.getEntriesCount());
+    }
+
+    @Test
+    void hKeysAndHVals() {
+        del("test:hash:kv");
+        client.hSet(HSetRequest.newBuilder().setKey("test:hash:kv")
+                .addFields(fv("a", "1")).addFields(fv("b", "2")).build()).await().indefinitely();
+        assertEquals(java.util.Set.of("a", "b"),
+                new java.util.HashSet<>(client.hKeys(HKeysRequest.newBuilder()
+                        .setKey("test:hash:kv").build()).await().indefinitely().getFieldsList()));
+        final java.util.Set<String> vals = new java.util.HashSet<>();
+        client.hVals(HValsRequest.newBuilder().setKey("test:hash:kv").build())
+                .await().indefinitely().getValuesList()
+                .forEach(v -> vals.add(v.toStringUtf8()));
+        assertEquals(java.util.Set.of("1", "2"), vals);
     }
 
     // ---------- helpers ----------

@@ -10,19 +10,28 @@ import com.google.protobuf.ByteString;
 import io.github.claudineyns.redis.grpc.v1.FieldValue;
 import io.github.claudineyns.redis.grpc.v1.HDelRequest;
 import io.github.claudineyns.redis.grpc.v1.HExistsRequest;
+import io.github.claudineyns.redis.grpc.v1.HGetAllRequest;
 import io.github.claudineyns.redis.grpc.v1.HGetRequest;
+import io.github.claudineyns.redis.grpc.v1.HKeysRequest;
 import io.github.claudineyns.redis.grpc.v1.HLenRequest;
+import io.github.claudineyns.redis.grpc.v1.HMGetRequest;
+import io.github.claudineyns.redis.grpc.v1.HMGetResponse;
 import io.github.claudineyns.redis.grpc.v1.HSetRequest;
+import io.github.claudineyns.redis.grpc.v1.HValsRequest;
 import io.github.claudineyns.redis.grpc.v1.HashCount;
+import io.github.claudineyns.redis.grpc.v1.HashEntries;
 import io.github.claudineyns.redis.grpc.v1.HashExists;
+import io.github.claudineyns.redis.grpc.v1.HashFields;
 import io.github.claudineyns.redis.grpc.v1.HashService;
 import io.github.claudineyns.redis.grpc.v1.HashValue;
+import io.github.claudineyns.redis.grpc.v1.HashValues;
 import io.grpc.Status;
 import io.quarkus.grpc.GrpcService;
 import io.smallrye.mutiny.Uni;
 import io.vertx.mutiny.redis.client.Command;
 import io.vertx.mutiny.redis.client.Redis;
 import io.vertx.mutiny.redis.client.Request;
+import io.vertx.mutiny.redis.client.Response;
 import jakarta.inject.Inject;
 
 /**
@@ -42,6 +51,10 @@ public class HashGrpcService implements HashService {
     private static final String CMD_HDEL = "HDEL";
     private static final String CMD_HEXISTS = "HEXISTS";
     private static final String CMD_HLEN = "HLEN";
+    private static final String CMD_HMGET = "HMGET";
+    private static final String CMD_HGETALL = "HGETALL";
+    private static final String CMD_HKEYS = "HKEYS";
+    private static final String CMD_HVALS = "HVALS";
 
     @Inject
     Redis redis; // CDI: não pode ser final (exceção da convenção de DESIGN seção 10)
@@ -162,6 +175,140 @@ public class HashGrpcService implements HashService {
                     return result;
                 })
                 .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<HMGetResponse> hMGet(final HMGetRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_HMGET);
+        MDC.put(LogFields.KEY, request.getKey());
+        final List<String> fields = request.getFieldsList();
+        LOG.debugf("HMGET recebido (fields=%d)", fields.size());
+
+        if (fields.isEmpty()) {
+            return Uni.createFrom().failure(Status.INVALID_ARGUMENT
+                    .withDescription("HMGET exige ao menos um campo").asRuntimeException());
+        }
+
+        final Request command = Request.cmd(Command.HMGET).arg(request.getKey());
+        for (final String field : fields) {
+            command.arg(field);
+        }
+        final long startNanos = System.nanoTime();
+
+        return redis.send(command)
+                .map(response -> {
+                    putRedisDuration(startNanos);
+                    // Array alinhado aos campos do request; elemento nulo = nil
+                    // (campo ausente). HMGET não devolve WRONGTYPE por campo.
+                    final HMGetResponse.Builder result = HMGetResponse.newBuilder();
+                    if (response != null) {
+                        for (int i = 0; i < response.size(); i++) {
+                            final Response item = response.get(i);
+                            final HashValue.Builder value = HashValue.newBuilder();
+                            if (item != null) {
+                                value.setValue(ByteString.copyFrom(item.toBytes()));
+                            }
+                            result.addValues(value.build());
+                        }
+                    }
+                    LOG.debugf("HMGET concluído (values=%d)", result.getValuesCount());
+                    return result.build();
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<HashEntries> hGetAll(final HGetAllRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_HGETALL);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("HGETALL recebido");
+
+        final Request command = Request.cmd(Command.HGETALL).arg(request.getKey());
+        final long startNanos = System.nanoTime();
+
+        return redis.send(command)
+                .map(response -> {
+                    putRedisDuration(startNanos);
+                    final HashEntries.Builder result = HashEntries.newBuilder();
+                    appendEntries(result, response);
+                    LOG.debugf("HGETALL concluído (entries=%d)", result.getEntriesCount());
+                    return result.build();
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<HashFields> hKeys(final HKeysRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_HKEYS);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("HKEYS recebido");
+
+        final Request command = Request.cmd(Command.HKEYS).arg(request.getKey());
+        final long startNanos = System.nanoTime();
+
+        return redis.send(command)
+                .map(response -> {
+                    putRedisDuration(startNanos);
+                    final HashFields.Builder result = HashFields.newBuilder();
+                    if (response != null) {
+                        for (final Response field : response) {
+                            result.addFields(field.toString());
+                        }
+                    }
+                    LOG.debugf("HKEYS concluído (fields=%d)", result.getFieldsCount());
+                    return result.build();
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    @Override
+    public Uni<HashValues> hVals(final HValsRequest request) {
+        MDC.put(LogFields.COMMAND, CMD_HVALS);
+        MDC.put(LogFields.KEY, request.getKey());
+        LOG.debug("HVALS recebido");
+
+        final Request command = Request.cmd(Command.HVALS).arg(request.getKey());
+        final long startNanos = System.nanoTime();
+
+        return redis.send(command)
+                .map(response -> {
+                    putRedisDuration(startNanos);
+                    final HashValues.Builder result = HashValues.newBuilder();
+                    if (response != null) {
+                        for (final Response value : response) {
+                            result.addValues(ByteString.copyFrom(value.toBytes()));
+                        }
+                    }
+                    LOG.debugf("HVALS concluído (values=%d)", result.getValuesCount());
+                    return result.build();
+                })
+                .onFailure().transform(RedisErrors::toStatus);
+    }
+
+    /**
+     * HGETALL: preenche os pares campo/valor. O Redis devolve um array plano
+     * [f1,v1,...] em RESP2 e um MAPA em RESP3 (cujo {@code type()} ainda é MULTI,
+     * mas {@code get(int)} lança "Multi is a Map"). Usamos {@code getKeys()}
+     * (não-nulo = mapa) para distinguir e tratamos os dois casos.
+     */
+    private static void appendEntries(final HashEntries.Builder result, final Response response) {
+        if (response == null) {
+            return;
+        }
+        final java.util.Set<String> keys = response.getKeys();
+        if (keys != null) {
+            for (final String field : keys) {
+                result.addEntries(FieldValue.newBuilder()
+                        .setField(field)
+                        .setValue(ByteString.copyFrom(response.get(field).toBytes())).build());
+            }
+            return;
+        }
+        for (int i = 0; i + 1 < response.size(); i += 2) {
+            result.addEntries(FieldValue.newBuilder()
+                    .setField(response.get(i).toString())
+                    .setValue(ByteString.copyFrom(response.get(i + 1).toBytes())).build());
+        }
     }
 
     private static void putRedisDuration(final long startNanos) {
